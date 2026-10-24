@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BookStore — Quản lý cửa hàng sách</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">B</div><div><strong>BookStore</strong><small>QUẢN LÝ CỬA HÀNG SÁCH</small></div></div>
+      <div class="nav-label">TỔNG QUAN</div>
+      <button class="nav-item active" data-page="dashboard"><span>⌂</span>Tổng quan</button>
+      <div class="nav-label">NGHIỆP VỤ</div>
+      <button class="nav-item" data-page="books"><span>▤</span>Quản lý sách</button>
+      <button class="nav-item" data-page="customers"><span>♙</span>Khách hàng</button>
+      <button class="nav-item" data-page="suppliers"><span>▣</span>Nhà cung cấp</button>
+      <button class="nav-item" data-page="purchases"><span>⇩</span>Nhập hàng</button>
+      <button class="nav-item" data-page="invoices"><span>▧</span>Bán hàng / Hóa đơn</button>
+      <button class="nav-item" data-page="returns"><span>⇄</span>Đổi / trả hàng</button>
+      <button class="nav-item" data-page="reports"><span>▥</span>Báo cáo & thống kê</button>
+      <div class="sidebar-bottom"><div class="status-dot"></div><div><strong>Hệ thống hoạt động</strong><small>Dữ liệu lưu trong máy chủ</small></div></div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div><div class="eyebrow">HỆ THỐNG QUẢN LÝ</div><h1 id="page-title">Tổng quan</h1></div><div class="top-actions"><span id="today"></span><button class="btn btn-light" id="refresh">Làm mới dữ liệu</button></div></header>
+      <section id="content" class="content"><div class="loading">Đang tải dữ liệu...</div></section>
+      <div id="toast" class="toast" role="status"></div>
+    </main>
+  </div>
+  <div id="modal-root"></div>
+  <script src="/js/app.js"></script>
+</body>
+</html>
