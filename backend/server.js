@@ -348,13 +348,14 @@ app.post("/api/returns", asyncRoute(async(req,res)=>{
 
 app.get("/api/reports/summary", asyncRoute(async(req,res)=>{
   const from=req.query.from||"2000-01-01", to=req.query.to||"2999-12-31";
-  const [sales,top,stock,monthly]=await Promise.all([
+  const [sales,top,stock,monthly,statusCounts]=await Promise.all([
     get("SELECT COUNT(*) invoices,COALESCE(SUM(total),0) revenue,COALESCE(SUM(discount),0) discounts FROM invoices WHERE payment_status='Đã thanh toán' AND date(created_at) BETWEEN date(?) AND date(?)",[from,to]),
-    all("SELECT b.title,b.code,SUM(ii.quantity) quantity,SUM(ii.quantity*ii.unit_price) revenue FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id JOIN books b ON b.id=ii.book_id WHERE date(i.created_at) BETWEEN date(?) AND date(?) GROUP BY b.id ORDER BY quantity DESC LIMIT 10",[from,to]),
+    all("SELECT b.code,b.title,SUM(ii.quantity) quantity,ROUND(SUM(ii.quantity*ii.unit_price),2) revenue FROM invoice_items ii JOIN invoices i ON i.id=ii.invoice_id JOIN books b ON b.id=ii.book_id WHERE i.payment_status='Đã thanh toán' AND date(i.created_at) BETWEEN date(?) AND date(?) GROUP BY b.id,b.code,b.title ORDER BY quantity DESC,revenue DESC,b.title ASC LIMIT 10",[from,to]),
     all("SELECT code,title,stock,min_stock,cost_price,stock*cost_price stock_value FROM books WHERE active=1 ORDER BY stock ASC"),
-    all("SELECT strftime('%Y-%m',created_at) month, SUM(total) revenue FROM invoices WHERE payment_status='Đã thanh toán' AND date(created_at) BETWEEN date(?) AND date(?) GROUP BY month ORDER BY month",[from,to])
+    all("SELECT strftime('%Y-%m',created_at) month, SUM(total) revenue FROM invoices WHERE payment_status='Đã thanh toán' AND date(created_at) BETWEEN date(?) AND date(?) GROUP BY month ORDER BY month",[from,to]),
+    all("SELECT payment_status,COUNT(*) count FROM invoices WHERE date(created_at) BETWEEN date(?) AND date(?) GROUP BY payment_status",[from,to])
   ]);
-  res.json({sales,top,stock,monthly});
+  res.json({sales,top,stock,monthly,statusCounts});
 }));
 
 app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));

@@ -159,15 +159,48 @@ function returnModal(inv,books){
  $("#return-invoice").onchange=loadBooks;loadBooks();$("#cancel-form").onclick=closeModal;
  form.onsubmit=async e=>{e.preventDefault();try{await api("/api/returns",{method:"POST",body:JSON.stringify(readForm(form))});closeModal();toast("Đã lưu giao dịch đổi / trả.");renderPage()}catch(err){toast(err.message)}};
 }
+function localDateValue(date){
+  const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,"0"),day=String(date.getDate()).padStart(2,"0");
+  return `${year}-${month}-${day}`;
+}
 async function reportsPage(){
- const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),1);
- $("#content").innerHTML=`${sectionHead("Báo cáo & thống kê","Doanh thu, sách bán chạy và tình hình tồn kho.")}<div class="panel"><div class="report-filters"><div class="field"><label>Từ ngày</label><input type="date" id="report-from" value="${start.toISOString().slice(0,10)}"></div><div class="field"><label>Đến ngày</label><input type="date" id="report-to" value="${now.toISOString().slice(0,10)}"></div><button class="btn btn-primary" id="run-report">Tạo báo cáo</button></div><div id="report-output"><div class="loading">Chọn điều kiện rồi tạo báo cáo.</div></div></div>`;
- $("#run-report").onclick=loadReport;await loadReport();
+  const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),1);
+  $("#content").innerHTML=`${sectionHead("Báo cáo & thống kê","Doanh thu, sách bán chạy và tình hình tồn kho.")}<div class="panel"><div class="report-filters"><div class="field"><label>Từ ngày</label><input type="date" id="report-from" value="${localDateValue(start)}"></div><div class="field"><label>Đến ngày</label><input type="date" id="report-to" value="${localDateValue(now)}"></div><button class="btn btn-primary" id="run-report">Tạo báo cáo</button></div><div id="report-output"><div class="loading">Đang tải báo cáo...</div></div></div>`;
+  $("#run-report").onclick=loadReport;await loadReport();
 }
 async function loadReport(){
- const from=$("#report-from").value,to=$("#report-to").value;if(from>to){toast("Ngày bắt đầu không được sau ngày kết thúc.");return}
- try{const r=await api(`/api/reports/summary?from=${from}&to=${to}`);
- $("#report-output").innerHTML=`<div class="stats" style="margin-top:10px">${stat("Doanh thu",money(r.sales.revenue),"Trong khoảng thời gian chọn","₫")}${stat("Số hóa đơn",number(r.sales.invoices),"Đã thanh toán","▧")}${stat("Tổng giảm giá",money(r.sales.discounts),"Trên hóa đơn","％")}${stat("Mặt hàng tồn kho",number(r.stock.length),"Đầu sách đang hoạt động","▤")}</div><div class="grid-2"><div class="table-card"><div class="table-toolbar"><strong>Sách bán chạy</strong></div><div class="table-wrap"><table><thead><tr><th>SÁCH</th><th>SỐ LƯỢNG</th><th>DOANH THU</th></tr></thead><tbody>${r.top.map(x=>`<tr><td>${esc(x.title)}</td><td>${x.quantity}</td><td>${money(x.revenue)}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">Chưa có dữ liệu bán hàng</td></tr>'}</tbody></table></div></div><div class="table-card"><div class="table-toolbar"><strong>Cảnh báo tồn kho</strong></div><div class="table-wrap"><table><thead><tr><th>SÁCH</th><th>TỒN</th><th>TỐI THIỂU</th></tr></thead><tbody>${r.stock.filter(x=>x.stock<=x.min_stock).map(x=>`<tr><td>${esc(x.title)}</td><td><span class="pill danger">${x.stock}</span></td><td>${x.min_stock}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">Không có sách dưới mức tồn tối thiểu</td></tr>'}</tbody></table></div></div></div><div class="table-card" style="margin-top:18px"><div class="table-toolbar"><strong>Báo cáo tồn kho</strong></div><div class="table-wrap"><table><thead><tr><th>MÃ SÁCH</th><th>TÊN SÁCH</th><th>TỒN KHO</th><th>GIÁ TRỊ TỒN (GIÁ NHẬP)</th></tr></thead><tbody>${r.stock.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${x.stock}</td><td>${money(x.stock_value)}</td></tr>`).join("")}</tbody></table></div></div>`;
- }catch(e){toast(e.message)}
+  const from=$("#report-from").value,to=$("#report-to").value;
+  if(from>to){toast("Ngày bắt đầu không được sau ngày kết thúc.");return}
+  try{
+    const r=await api(`/api/reports/summary?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const statusCount=status=>Number((r.statusCounts||[]).find(x=>x.payment_status===status)?.count||0);
+    $("#report-output").innerHTML=`
+      <div class="stats" style="margin-top:10px">
+        ${stat("Doanh thu",money(r.sales.revenue),"Chỉ hóa đơn đã thanh toán","₫")}
+        ${stat("Số hóa đơn",number(r.sales.invoices),"Đã thanh toán thành công","▧")}
+        ${stat("Tổng giảm giá",money(r.sales.discounts),"Trên hóa đơn đã thanh toán","％")}
+        ${stat("Mặt hàng tồn kho",number(r.stock.length),"Đầu sách đang hoạt động","▤")}
+      </div>
+      <div class="table-card" style="margin-top:14px">
+        <div class="table-toolbar"><strong>Đối chiếu trạng thái hóa đơn</strong><span class="hint">${esc(from)} đến ${esc(to)}</span></div>
+        <div class="stats">
+          ${stat("Đã thanh toán",number(statusCount("Đã thanh toán")),"Được tính vào doanh thu","✓")}
+          ${stat("Chưa thanh toán",number(statusCount("Chưa thanh toán")),"Không tính vào doanh thu","…")}
+          ${stat("Hủy thanh toán",number(statusCount("Hủy thanh toán")),"Không tính vào doanh thu","×")}
+        </div>
+      </div>
+      <div class="grid-2" style="margin-top:18px">
+        <div class="table-card">
+          <div class="table-toolbar"><strong>Sách bán chạy</strong><span class="hint">Chỉ tính hóa đơn đã thanh toán</span></div>
+          <div class="table-wrap"><table><thead><tr><th>MÃ SÁCH</th><th>TÊN SÁCH</th><th>SỐ LƯỢNG ĐÃ BÁN</th><th>TỔNG DOANH THU</th></tr></thead>
+          <tbody>${r.top.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${number(x.quantity)}</td><td>${money(x.revenue)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Chưa có sách được bán trong các hóa đơn đã thanh toán ở khoảng thời gian này</td></tr>'}</tbody></table></div>
+        </div>
+        <div class="table-card">
+          <div class="table-toolbar"><strong>Cảnh báo tồn kho</strong></div>
+          <div class="table-wrap"><table><thead><tr><th>SÁCH</th><th>TỒN</th><th>TỐI THIỂU</th></tr></thead><tbody>${r.stock.filter(x=>x.stock<=x.min_stock).map(x=>`<tr><td>${esc(x.title)}</td><td><span class="pill danger">${x.stock}</span></td><td>${x.min_stock}</td></tr>`).join("")||'<tr><td colspan="3" class="empty">Không có sách dưới mức tồn tối thiểu</td></tr>'}</tbody></table></div>
+        </div>
+      </div>
+      <div class="table-card" style="margin-top:18px"><div class="table-toolbar"><strong>Báo cáo tồn kho</strong></div><div class="table-wrap"><table><thead><tr><th>MÃ SÁCH</th><th>TÊN SÁCH</th><th>TỒN KHO</th><th>GIÁ TRỊ TỒN (GIÁ NHẬP)</th></tr></thead><tbody>${r.stock.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${x.stock}</td><td>${money(x.stock_value)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  }catch(e){toast(e.message)}
 }
 renderPage();
