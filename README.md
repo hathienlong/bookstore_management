@@ -64,7 +64,7 @@ bookstore-management/
 
 5. Truy cập `http://localhost:3000`.
 
-Backend sẽ phục vụ giao diện từ thư mục `frontend`. Cơ sở dữ liệu `backend/data/bookstore.db` và dữ liệu mẫu được tạo tự động khi chạy lần đầu. Không mở `index.html` trực tiếp bằng cách nhấp đúp; hãy truy cập qua địa chỉ localhost ở trên.
+Backend sẽ phục vụ giao diện từ thư mục `frontend`. ZIP demo này đã kèm sẵn `backend/data/bookstore.db` với dữ liệu mẫu đã được bổ sung. Nếu file database không tồn tại, backend sẽ tự tạo database và nạp dữ liệu demo khi chạy lần đầu. Không mở `index.html` trực tiếp bằng cách nhấp đúp; hãy truy cập qua địa chỉ localhost ở trên.
 
 ## 5. API chính
 
@@ -87,3 +87,12 @@ Backend sẽ phục vụ giao diện từ thư mục `frontend`. Cơ sở dữ l
 ## 6. Lưu ý
 
 Đây là bản học tập/demo, chưa có đăng nhập và phân quyền, chưa kết nối cổng thanh toán thật và cần gia cố bảo mật trước khi triển khai công khai. Nếu muốn làm mới dữ liệu demo, hãy dừng máy chủ, xóa `backend/data/bookstore.db`, rồi chạy lại `npm start`.
+
+## 7. Dữ liệu mẫu trong bản demo
+
+- 30 đầu sách mới (mã `S007`–`S036`), tồn kho từng đầu sách dưới 100; ba đầu sách có tồn kho lần lượt 2, 3 và 4 cuốn.
+- 10 nhà cung cấp mới (mã `NCC003`–`NCC012`). Mỗi sách mới được liên kết với một nhà cung cấp thông qua `purchase_receipts` và `purchase_items`.
+- 10 khách hàng thành viên mới (mã `KH003`–`KH012`), có điểm tích lũy và hạng thành viên.
+- 15 hóa đơn mẫu, gồm 5 `Chưa thanh toán`, 5 `Đã thanh toán` và 5 `Hủy thanh toán`; mỗi hóa đơn có khách hàng và chi tiết sách hợp lệ.
+
+Dữ liệu bổ sung trong `server.js` dùng mã cố định và `INSERT OR IGNORE`, nên khởi động lại không tự nhân đôi các bản ghi demo. File database được đưa kèm ZIP để có thể mở xem ngay; `.gitignore` vẫn bỏ qua file `.db` khi đẩy mã nguồn lên Git.

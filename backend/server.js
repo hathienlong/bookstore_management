@@ -101,6 +101,81 @@ async function initDb() {
     await run("INSERT INTO suppliers(code,name,phone,email,address) VALUES(?,?,?,?,?)",
       ["NCC002","Nhà sách Tổng hợp","0283930 1234","info@example.com","TP. Hồ Chí Minh"]);
   }
+
+  // Bộ dữ liệu demo bổ sung: INSERT OR IGNORE giúp không nhân đôi khi khởi động lại.
+  const demoSuppliers = [["NCC003", "Công ty Phát hành sách Thành Đạt", "028 3821 1003", "thanhdat@example.com", "TP. Hồ Chí Minh"], ["NCC004", "Công ty Sách Ánh Dương", "028 3821 1004", "anhduong@example.com", "TP. Hồ Chí Minh"], ["NCC005", "Nhà phân phối Tri Thức Việt", "028 3821 1005", "trithucviet@example.com", "Hà Nội"], ["NCC006", "Công ty Sách Minh Long", "028 3821 1006", "minhlong@example.com", "Đà Nẵng"], ["NCC007", "Nhà sách Phương Nam", "028 3821 1007", "phuongnam@example.com", "TP. Hồ Chí Minh"], ["NCC008", "Công ty Sách Đông A", "028 3821 1008", "donga@example.com", "TP. Hồ Chí Minh"], ["NCC009", "Nhà phân phối Kim Đồng", "028 3821 1009", "kimdong@example.com", "Hà Nội"], ["NCC010", "Công ty Sách Thái Hà", "028 3821 1010", "thaiha@example.com", "Hà Nội"], ["NCC011", "Công ty Văn hóa Sáng Tạo", "028 3821 1011", "sangtao@example.com", "Cần Thơ"], ["NCC012", "Nhà phân phối Văn Lang", "028 3821 1012", "vanlang@example.com", "TP. Hồ Chí Minh"]];
+  for (const s of demoSuppliers) {
+    await run("INSERT OR IGNORE INTO suppliers(code,name,phone,email,address) VALUES(?,?,?,?,?)", s);
+  }
+
+  const demoBooks = [["S007", "Cây cam ngọt của tôi", "José Mauro de Vasconcelos", "Văn học", "NXB Hội Nhà Văn", 2022, 108000, 65000, 2, 5], ["S008", "Đi tìm lẽ sống", "Viktor E. Frankl", "Tâm lý", "NXB Tổng hợp", 2021, 88000, 52000, 3, 5], ["S009", "Không gia đình", "Hector Malot", "Văn học", "Kim Đồng", 2020, 125000, 76000, 4, 5], ["S010", "Nhà thờ Đức Bà Paris", "Victor Hugo", "Văn học", "NXB Văn Học", 2019, 145000, 88000, 26, 5], ["S011", "Bố già", "Mario Puzo", "Tiểu thuyết", "NXB Văn Học", 2022, 135000, 82000, 32, 5], ["S012", "Rừng Na Uy", "Haruki Murakami", "Tiểu thuyết", "Nhã Nam", 2021, 119000, 71000, 21, 5], ["S013", "Kafka bên bờ biển", "Haruki Murakami", "Tiểu thuyết", "Nhã Nam", 2020, 155000, 93000, 17, 5], ["S014", "Sapiens: Lược sử loài người", "Yuval Noah Harari", "Lịch sử", "Omega+", 2022, 189000, 112000, 28, 5], ["S015", "Homo Deus: Lược sử tương lai", "Yuval Noah Harari", "Lịch sử", "Omega+", 2021, 199000, 118000, 19, 5], ["S016", "Tư duy nhanh và chậm", "Daniel Kahneman", "Tâm lý", "NXB Thế Giới", 2020, 179000, 108000, 24, 5], ["S017", "Dám bị ghét", "Kishimi Ichiro, Koga Fumitake", "Tâm lý", "Nhã Nam", 2022, 99000, 59000, 35, 5], ["S018", "Atomic Habits: Thay đổi tí hon, hiệu quả bất ngờ", "James Clear", "Kỹ năng", "NXB Thế Giới", 2023, 150000, 90000, 42, 5], ["S019", "7 thói quen hiệu quả", "Stephen R. Covey", "Kỹ năng", "NXB Tổng hợp", 2021, 135000, 81000, 18, 5], ["S020", "Tuần làm việc 4 giờ", "Timothy Ferriss", "Kinh doanh", "Alphabooks", 2020, 145000, 87000, 16, 5], ["S021", "Khởi nghiệp tinh gọn", "Eric Ries", "Kinh doanh", "NXB Công Thương", 2022, 165000, 99000, 23, 5], ["S022", "Marketing giỏi phải kiếm được tiền", "Sergio Zyman", "Kinh doanh", "NXB Trẻ", 2019, 125000, 75000, 14, 5], ["S023", "Từ tốt đến vĩ đại", "Jim Collins", "Kinh doanh", "NXB Trẻ", 2021, 155000, 93000, 27, 5], ["S024", "Lược sử thời gian", "Stephen Hawking", "Khoa học", "NXB Trẻ", 2020, 115000, 69000, 31, 5], ["S025", "Vũ trụ trong vỏ hạt dẻ", "Stephen Hawking", "Khoa học", "NXB Trẻ", 2022, 135000, 81000, 22, 5], ["S026", "Gen: Lịch sử và tương lai của nhân loại", "Siddhartha Mukherjee", "Khoa học", "Omega+", 2021, 220000, 132000, 12, 5], ["S027", "Bí mật của nước", "Masaru Emoto", "Khoa học", "NXB Lao Động", 2018, 95000, 57000, 29, 5], ["S028", "Thế giới phẳng", "Thomas L. Friedman", "Kinh tế", "NXB Trẻ", 2019, 185000, 111000, 20, 5], ["S029", "Cha giàu cha nghèo", "Robert T. Kiyosaki", "Tài chính", "NXB Trẻ", 2022, 105000, 63000, 38, 5], ["S030", "Nghĩ giàu và làm giàu", "Napoleon Hill", "Tài chính", "First News", 2021, 99000, 59000, 33, 5], ["S031", "Bí mật tư duy triệu phú", "T. Harv Eker", "Tài chính", "NXB Tổng hợp", 2020, 115000, 69000, 25, 5], ["S032", "Cho tôi xin một vé đi tuổi thơ (bản minh họa)", "Nguyễn Nhật Ánh", "Văn học", "NXB Trẻ", 2023, 110000, 66000, 15, 5], ["S033", "Mắt biếc", "Nguyễn Nhật Ánh", "Văn học", "NXB Trẻ", 2021, 95000, 57000, 30, 5], ["S034", "Tôi thấy hoa vàng trên cỏ xanh", "Nguyễn Nhật Ánh", "Văn học", "NXB Trẻ", 2020, 105000, 63000, 36, 5], ["S035", "Thám tử lừng danh Conan - Tập 1", "Gosho Aoyama", "Truyện tranh", "Kim Đồng", 2022, 25000, 15000, 48, 5], ["S036", "One Piece - Tập 1", "Eiichiro Oda", "Truyện tranh", "Kim Đồng", 2022, 25000, 15000, 44, 5]];
+  for (const b of demoBooks) {
+    await run("INSERT OR IGNORE INTO books(code,title,author,genre,publisher,publish_year,price,cost_price,stock,min_stock) VALUES(?,?,?,?,?,?,?,?,?,?)", b);
+  }
+
+  const demoCustomers = [["KH003", "Lê Hoàng Nam", "0903000003", "nam.le@example.com", "TP. Hồ Chí Minh", 860, "Vàng"], ["KH004", "Phạm Ngọc Hà", "0903000004", "ha.pham@example.com", "Bình Dương", 1250, "Vàng"], ["KH005", "Võ Minh Khang", "0903000005", "khang.vo@example.com", "Đồng Nai", 430, "Bạc"], ["KH006", "Đặng Thùy Linh", "0903000006", "linh.dang@example.com", "TP. Hồ Chí Minh", 2180, "Kim cương"], ["KH007", "Bùi Gia Huy", "0903000007", "huy.bui@example.com", "Long An", 670, "Bạc"], ["KH008", "Đỗ Khánh Vy", "0903000008", "vy.do@example.com", "TP. Hồ Chí Minh", 1540, "Vàng"], ["KH009", "Ngô Đức Anh", "0903000009", "anh.ngo@example.com", "Tây Ninh", 390, "Bạc"], ["KH010", "Huỳnh Mỹ Duyên", "0903000010", "duyen.huynh@example.com", "Cần Thơ", 2750, "Kim cương"], ["KH011", "Trương Nhật Minh", "0903000011", "minh.truong@example.com", "TP. Hồ Chí Minh", 980, "Vàng"], ["KH012", "Phan Bảo Ngọc", "0903000012", "ngoc.phan@example.com", "Đà Nẵng", 560, "Bạc"]];
+  for (const c of demoCustomers) {
+    await run("INSERT OR IGNORE INTO customers(code,name,phone,email,address,points,tier) VALUES(?,?,?,?,?,?,?)", c);
+  }
+
+  // Liên kết sách với nhà cung cấp thông qua phiếu nhập và chi tiết phiếu nhập.
+  for (let supplierIndex = 0; supplierIndex < demoSuppliers.length; supplierIndex++) {
+    const supplier = await get("SELECT id FROM suppliers WHERE code=?", [demoSuppliers[supplierIndex][0]]);
+    const receiptCode = `PN-DEMO-${String(supplierIndex + 1).padStart(3, "0")}`;
+    const receiptExists = await get("SELECT id FROM purchase_receipts WHERE code=?", [receiptCode]);
+    if (!receiptExists) {
+      const suppliedBooks = demoBooks.filter((book, index) => index % demoSuppliers.length === supplierIndex);
+      const total = suppliedBooks.reduce((sum, book) => sum + book[8] * book[7], 0);
+      const receipt = await run("INSERT INTO purchase_receipts(code,supplier_id,total,note) VALUES(?,?,?,?)",
+        [receiptCode, supplier.id, total, "Phiếu nhập dữ liệu demo"]);
+      for (const book of suppliedBooks) {
+        const savedBook = await get("SELECT id FROM books WHERE code=?", [book[0]]);
+        await run("INSERT INTO purchase_items(receipt_id,book_id,quantity,unit_cost) VALUES(?,?,?,?)",
+          [receipt.id, savedBook.id, book[8], book[7]]);
+      }
+    }
+  }
+
+  // 15 hóa đơn: mỗi trạng thái có 5 hóa đơn. Hóa đơn hủy không trừ tồn kho.
+  const demoStatuses = ["Chưa thanh toán","Đã thanh toán","Hủy thanh toán"];
+  for (let i = 0; i < 15; i++) {
+    const invoiceCode = `HD-DEMO-${String(i + 1).padStart(3, "0")}`;
+    const exists = await get("SELECT id FROM invoices WHERE code=?", [invoiceCode]);
+    if (exists) continue;
+    const status = demoStatuses[Math.floor(i / 5)];
+    const customerCode = demoCustomers[i % demoCustomers.length][0];
+    const customer = await get("SELECT id FROM customers WHERE code=?", [customerCode]);
+    const chosen = [
+      demoBooks[3 + ((i * 2) % 27)],
+      demoBooks[3 + ((i * 2 + 7) % 27)]
+    ];
+    const lines = [];
+    for (let j = 0; j < chosen.length; j++) {
+      const book = await get("SELECT * FROM books WHERE code=?", [chosen[j][0]]);
+      const quantity = 1 + ((i + j) % 2);
+      lines.push({ book, quantity });
+    }
+    const subtotal = lines.reduce((sum, line) => sum + line.book.price * line.quantity, 0);
+    const discount = i % 3 === 0 ? Math.round(subtotal * 0.05) : 0;
+    const total = subtotal - discount;
+    const createdAt = `2026-10-${String(10 + i).padStart(2, "0")} ${String(9 + (i % 8)).padStart(2, "0")}:${String((i * 7) % 60).padStart(2, "0")}:00`;
+    const invoice = await run(
+      "INSERT INTO invoices(code,customer_id,subtotal,discount,total,payment_method,payment_status,note,created_at) VALUES(?,?,?,?,?,?,?,?,?)",
+      [invoiceCode, customer.id, subtotal, discount, total, i % 2 ? "Chuyển khoản" : "Tiền mặt", status,
+       "Hóa đơn dữ liệu demo", createdAt]
+    );
+    for (const line of lines) {
+      await run("INSERT INTO invoice_items(invoice_id,book_id,quantity,unit_price) VALUES(?,?,?,?)",
+        [invoice.id, line.book.id, line.quantity, line.book.price]);
+      if (status !== "Hủy thanh toán") {
+        await run("UPDATE books SET stock=MAX(0, stock-?) WHERE id=?", [line.quantity, line.book.id]);
+      }
+    }
+    if (status === "Đã thanh toán") {
+      await run("UPDATE customers SET points=points+? WHERE id=?", [Math.floor(total / 10000), customer.id]);
+    }
+  }
+
 }
 
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
