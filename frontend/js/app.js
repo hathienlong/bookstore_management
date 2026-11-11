@@ -130,16 +130,76 @@ async function invoicesPage(){
  $("#new-invoice").onclick=invoiceModal;
  document.querySelectorAll("[data-invoice]").forEach(b=>b.onclick=()=>invoiceDetail(b.dataset.invoice));
 }
+
+/* ===== Ô chọn có tìm kiếm (combobox): bấm để xổ danh sách hoặc gõ mã/tên để lọc ===== */
+const fold=s=>String(s??"").normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D").toLowerCase();
+function combo({items,placeholder="",emptyItem=null,selected=null,onChange=()=>{}}){
+ const wrap=document.createElement("div");wrap.className="combo";
+ wrap.innerHTML=`<input type="text" class="combo-input" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" placeholder="${esc(placeholder)}"><span class="combo-caret">▾</span>`;
+ const input=wrap.firstChild;let list=null,matches=[],active=0,current=null;
+ const pool=items.map(it=>({...it,_k:fold(it.search||it.label)}));
+ function setItem(it,silent){current=it;input.value=it?it.label:"";if(!silent)onChange(it)}
+ function place(){if(!list)return;const r=input.getBoundingClientRect(),below=innerHeight-r.bottom,h=Math.min(260,list.scrollHeight);const up=below<h+12&&r.top>below;list.style.left=r.left+"px";list.style.width=Math.max(r.width,260)+"px";list.style.top=up?"auto":r.bottom+4+"px";list.style.bottom=up?innerHeight-r.top+4+"px":"auto";list.style.maxHeight=Math.max(120,Math.min(260,(up?r.top:below)-12))+"px"}
+ function render(q){
+  const toks=fold(q).split(/\s+/).filter(Boolean);
+  matches=pool.filter(it=>toks.every(t=>it._k.includes(t)));
+  const exact=toks.length?matches.findIndex(it=>fold(it.code||"")===toks[0]):-1;
+  if(exact>0)matches.unshift(matches.splice(exact,1)[0]);
+  active=0;
+  const shown=matches.slice(0,60);
+  list.innerHTML=shown.map((it,i)=>`<div class="combo-opt${i===active?" active":""}${current===it?" selected":""}" role="option" data-i="${i}">${it.html||esc(it.label)}</div>`).join("")+(matches.length>60?`<div class="combo-note">Còn ${matches.length-60} kết quả — gõ thêm để thu hẹp</div>`:"")||`<div class="combo-note">Không tìm thấy kết quả phù hợp</div>`;
+  place();
+ }
+ function open(q=""){
+  if(!list){list=document.createElement("div");list.className="combo-list";list.setAttribute("role","listbox");
+   list.addEventListener("mousedown",e=>{e.preventDefault();const o=e.target.closest(".combo-opt");if(o){pick(matches[Number(o.dataset.i)])}});
+   document.body.appendChild(list);addEventListener("resize",place);addEventListener("scroll",place,true)}
+  input.setAttribute("aria-expanded","true");render(q);
+  const sel=list.querySelector(".selected");if(sel)sel.scrollIntoView({block:"nearest"});
+ }
+ function close(){if(!list)return;removeEventListener("resize",place);removeEventListener("scroll",place,true);list.remove();list=null;input.setAttribute("aria-expanded","false")}
+ function pick(it){if(!it)return;setItem(it);close();input.select&&0}
+ function move(d){if(!list||!matches.length)return;active=(active+d+Math.min(matches.length,60))%Math.min(matches.length,60);list.querySelectorAll(".combo-opt").forEach((o,i)=>o.classList.toggle("active",i===active));list.querySelector(".combo-opt.active")?.scrollIntoView({block:"nearest"})}
+ input.addEventListener("focus",()=>{input.select();open("")});
+ input.addEventListener("click",()=>{if(!list){input.select();open("")}});
+ input.addEventListener("input",()=>{if(current){current=null;onChange(null)}open(input.value)});
+ input.addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"){e.preventDefault();if(!list)open(input.value);else move(1)}
+  else if(e.key==="ArrowUp"){e.preventDefault();move(-1)}
+  else if(e.key==="Enter"){if(list){e.preventDefault();pick(matches[active])}}
+  else if(e.key==="Escape"&&list){e.preventDefault();e.stopPropagation();close();input.value=current?current.label:""}
+ });
+ input.addEventListener("blur",()=>{
+  if(!current){const t=fold(input.value.trim());
+   if(!t&&emptyItem)setItem(emptyItem);
+   else if(t){const m=pool.filter(it=>fold(it.code||"")===t);if(m.length===1)setItem(m[0]);else if(matches.length===1&&list)setItem(matches[0]);else input.value=""}}
+  else input.value=current.label;
+  close();
+ });
+ setItem(selected||emptyItem,true);
+ Object.defineProperties(wrap,{item:{get:()=>current},value:{get:()=>current?current.value:null}});
+ wrap.focusInput=()=>input.focus();
+ return wrap;
+}
 async function invoiceModal(){
  const [books,customers]=await Promise.all([api("/api/books"),api("/api/customers")]);booksCache=books;customersCache=customers;
  if(!books.some(b=>b.stock>0)){toast("Không có sách còn hàng để bán.");return}
- modal("Tạo hóa đơn bán hàng",`<form id="invoice-form"><div class="form-grid"><div class="field"><label>Khách hàng</label><select name="customer_id"><option value="">Khách vãng lai</option>${customers.map(c=>`<option value="${c.id}">${esc(c.name)} · ${esc(c.phone)}</option>`).join("")}</select></div><div class="field"><label>Phương thức thanh toán</label><select name="payment_method"><option>Tiền mặt</option><option>Chuyển khoản</option><option>Thẻ ngân hàng</option></select></div></div><div class="field" style="margin-top:18px"><label>Danh sách sách</label></div><div id="invoice-lines"></div><button type="button" class="btn btn-light" id="add-invoice-line">＋ Thêm sách</button><div class="form-grid" style="margin-top:18px"><div class="field"><label>Giảm giá (VNĐ)</label><input name="discount" type="number" min="0" value="0"></div><div class="field"><label>Ghi chú</label><input name="note"></div></div><div class="panel" style="margin-top:16px;padding:14px"><div class="total-line"><span>Tạm tính</span><strong id="invoice-subtotal">0 ₫</strong></div><div class="total-line"><span>Giảm giá</span><strong id="invoice-discount">0 ₫</strong></div><div class="total-line final"><span>Thanh toán</span><strong id="invoice-total">0 ₫</strong></div></div><div class="modal-actions"><button type="button" class="btn btn-light" id="cancel-form">Hủy</button><button class="btn btn-primary">Xác nhận thanh toán</button></div></form>`);
+ modal("Tạo hóa đơn bán hàng",`<form id="invoice-form"><div class="form-grid"><div class="field"><label>Khách hàng <span class="muted" style="font-weight:400">(gõ mã, tên hoặc SĐT để tìm)</span></label><div id="customer-combo"></div></div><div class="field"><label>Phương thức thanh toán</label><select name="payment_method"><option>Tiền mặt</option><option>Chuyển khoản</option><option>Thẻ ngân hàng</option></select></div></div><div class="field" style="margin-top:18px"><label>Danh sách sách</label></div><div id="invoice-lines"></div><button type="button" class="btn btn-light" id="add-invoice-line">＋ Thêm sách</button><div class="form-grid" style="margin-top:18px"><div class="field"><label>Giảm giá (VNĐ)</label><input name="discount" type="number" min="0" value="0"></div><div class="field"><label>Ghi chú</label><input name="note"></div></div><div class="panel" style="margin-top:16px;padding:14px"><div class="total-line"><span>Tạm tính</span><strong id="invoice-subtotal">0 ₫</strong></div><div class="total-line"><span>Giảm giá</span><strong id="invoice-discount">0 ₫</strong></div><div class="total-line final"><span>Thanh toán</span><strong id="invoice-total">0 ₫</strong></div></div><div class="modal-actions"><button type="button" class="btn btn-light" id="cancel-form">Hủy</button><button class="btn btn-primary">Xác nhận thanh toán</button></div></form>`);
  const lines=$("#invoice-lines");
- function addLine(){const available=books.filter(b=>b.stock>0);const row=document.createElement("div");row.className="item-line";row.innerHTML=`<select class="invoice-book">${available.map(b=>`<option value="${b.id}" data-price="${b.price}" data-stock="${b.stock}">${esc(b.code)} · ${esc(b.title)} (còn ${b.stock})</option>`).join("")}</select><input class="invoice-qty" type="number" min="1" value="1" aria-label="Số lượng"><span class="line-price">${money(available[0]?.price||0)}</span><button type="button" class="close">×</button>`;row.querySelector("button").onclick=()=>{row.remove();calc()};row.querySelectorAll("select,input").forEach(el=>el.addEventListener("input",()=>{row.querySelector(".line-price").textContent=money(Number(row.querySelector(".invoice-book").selectedOptions[0]?.dataset.price)*Number(row.querySelector(".invoice-qty").value));calc()}));lines.appendChild(row);calc()}
- function calc(){const sub=[...lines.querySelectorAll(".item-line")].reduce((s,r)=>s+Number(r.querySelector(".invoice-book").selectedOptions[0]?.dataset.price||0)*Math.max(0,Number(r.querySelector(".invoice-qty").value)||0),0);const disc=Math.min(sub,Math.max(0,Number($("#invoice-form")?.discount?.value)||0));$("#invoice-subtotal").textContent=money(sub);$("#invoice-discount").textContent=money(disc);$("#invoice-total").textContent=money(sub-disc)}
- addLine();$("#add-invoice-line").onclick=addLine;$("#cancel-form").onclick=closeModal;$("#invoice-form").discount.addEventListener("input",calc);
- $("#invoice-form").onsubmit=async e=>{e.preventDefault();const items=[...lines.querySelectorAll(".item-line")].map(r=>({book_id:Number(r.querySelector(".invoice-book").value),quantity:Number(r.querySelector(".invoice-qty").value)}));
- try{const invoice=await api("/api/invoices",{method:"POST",body:JSON.stringify({customer_id:e.target.customer_id.value||null,payment_method:e.target.payment_method.value,discount:Number(e.target.discount.value)||0,note:e.target.note.value,items})});closeModal();toast("Tạo hóa đơn thành công: "+invoice.code);renderPage()}catch(err){toast(err.message)}};
+ const available=books.filter(b=>b.stock>0);
+ const bookItems=available.map(b=>({value:b.id,code:b.code,price:b.price,stock:b.stock,label:`${b.code} · ${b.title}`,search:`${b.code} ${b.title} ${b.author||""}`,html:`<strong>${esc(b.code)}</strong> · ${esc(b.title)}<small>${esc(b.author||"")}${b.author?" · ":""}${money(b.price)} · còn ${b.stock}</small>`}));
+ const customerItems=customers.map(c=>({value:c.id,code:c.code,label:`${c.code?c.code+" · ":""}${c.name}`,search:`${c.code||""} ${c.name} ${c.phone||""}`,html:`<strong>${esc(c.code||"")}</strong> · ${esc(c.name)}<small>${esc(c.phone||"Chưa có SĐT")}${c.tier?" · "+esc(c.tier):""}</small>`}));
+ const walkIn={value:"",label:"Khách vãng lai",search:"khach vang lai",html:"Khách vãng lai"};
+ const customerCombo=combo({items:[walkIn,...customerItems],emptyItem:walkIn,placeholder:"Khách vãng lai"});$("#customer-combo").appendChild(customerCombo);
+ function addLine(focus){const row=document.createElement("div");row.className="item-line";row.innerHTML=`<span class="slot"></span><input class="invoice-qty" type="number" min="1" value="1" aria-label="Số lượng"><span class="line-price">${money(0)}</span><button type="button" class="close">×</button>`;
+  const qty=row.querySelector(".invoice-qty");
+  const upd=()=>{const it=row.combo.item;qty.max=it?it.stock:"";row.querySelector(".line-price").textContent=money((it?.price||0)*(Number(qty.value)||0));calc()};
+  row.combo=combo({items:bookItems,placeholder:"Gõ mã hoặc tựa sách...",onChange:upd});row.querySelector(".slot").replaceWith(row.combo);
+  row.querySelector("button").onclick=()=>{row.remove();calc()};qty.addEventListener("input",upd);lines.appendChild(row);calc();if(focus)row.combo.focusInput()}
+ function calc(){const sub=[...lines.querySelectorAll(".item-line")].reduce((s,r)=>s+Number(r.combo.item?.price||0)*Math.max(0,Number(r.querySelector(".invoice-qty").value)||0),0);const disc=Math.min(sub,Math.max(0,Number($("#invoice-form")?.discount?.value)||0));$("#invoice-subtotal").textContent=money(sub);$("#invoice-discount").textContent=money(disc);$("#invoice-total").textContent=money(sub-disc)}
+ addLine();$("#add-invoice-line").onclick=()=>addLine(true);$("#cancel-form").onclick=closeModal;$("#invoice-form").discount.addEventListener("input",calc);
+ $("#invoice-form").onsubmit=async e=>{e.preventDefault();const rows=[...lines.querySelectorAll(".item-line")];if(!rows.length||rows.some(r=>!r.combo.item)){toast("Vui lòng chọn sách cho tất cả các dòng (hoặc xóa dòng trống).");return}const items=rows.map(r=>({book_id:Number(r.combo.value),quantity:Number(r.querySelector(".invoice-qty").value)}));
+ try{const invoice=await api("/api/invoices",{method:"POST",body:JSON.stringify({customer_id:customerCombo.value||null,payment_method:e.target.payment_method.value,discount:Number(e.target.discount.value)||0,note:e.target.note.value,items})});closeModal();toast("Tạo hóa đơn thành công: "+invoice.code);renderPage()}catch(err){toast(err.message)}};
 }
 async function invoiceDetail(id){
  try{const i=await api("/api/invoices/"+id);modal("Chi tiết hóa đơn "+i.code,`<div class="small-note">Khách hàng: <strong>${esc(i.customer_name)}</strong><br>Ngày tạo: ${new Date(i.created_at+"Z").toLocaleString("vi-VN")}<br>Phương thức: ${esc(i.payment_method)}</div><div class="table-wrap" style="margin-top:15px"><table><thead><tr><th>SÁCH</th><th>SL</th><th>ĐƠN GIÁ</th><th>THÀNH TIỀN</th></tr></thead><tbody>${i.items.map(x=>`<tr><td>${esc(x.title)}</td><td>${x.quantity}</td><td>${money(x.unit_price)}</td><td>${money(x.quantity*x.unit_price)}</td></tr>`).join("")}</tbody></table></div><div class="total-line"><span>Tạm tính</span><strong>${money(i.subtotal)}</strong></div><div class="total-line"><span>Giảm giá</span><strong>${money(i.discount)}</strong></div><div class="total-line final"><span>Tổng cộng</span><strong>${money(i.total)}</strong></div><div class="modal-actions"><button class="btn btn-primary" id="detail-close">Đóng</button></div>`);$("#detail-close").onclick=closeModal}catch(e){toast(e.message)}
