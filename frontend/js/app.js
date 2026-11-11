@@ -13,8 +13,41 @@ async function api(url, options={}) {
   return data;
 }
 function toast(message){const el=$("#toast");el.textContent=message;el.classList.add("show");clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove("show"),3000)}
-function setPage(p){page=p;currentQuery="";document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===p));$("#page-title").textContent=titles[p];renderPage()}
-document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>setPage(b.dataset.page)));
+
+/* ===== Vai trò (actor) theo sơ đồ use case — chỉ phục vụ demo giao diện, chưa phải đăng nhập/bảo mật thật ===== */
+const DEMO_CUSTOMER_CODE="KH001";
+const NAV_ITEMS={dashboard:["⌂","Tổng quan"],books:["▤","Quản lý sách"],customers:["♙","Khách hàng"],suppliers:["▣","Nhà cung cấp"],purchases:["⇩","Nhập hàng"],stock:["◫","Tồn kho & kiểm kê"],invoices:["▧","Bán hàng / Hóa đơn"],promotions:["％","Chương trình khuyến mãi"],returns:["⇄","Đổi / trả hàng"],reports:["▥","Báo cáo & thống kê"],mytier:["★","Hạng thành viên của tôi"],myinvoices:["▧","Hóa đơn của tôi"]};
+const ROLES={
+ customer:{label:"Khách hàng",icon:"♙",desc:"Tra cứu sách, xem hạng thành viên và hóa đơn của tôi",home:"books",can:{},nav:[["TRA CỨU",["books"]],["TÀI KHOẢN CỦA TÔI",["mytier","myinvoices"]]]},
+ sales:{label:"Nhân viên bán hàng",icon:"▧",desc:"Lập hóa đơn, đổi/trả hàng, lưu thông tin khách, tra cứu sách",home:"invoices",can:{customerEdit:1},nav:[["BÁN HÀNG",["invoices","returns","promotions"]],["KHÁCH HÀNG",["customers"]],["TRA CỨU",["books"]]]},
+ warehouse:{label:"Nhân viên kho",icon:"◫",desc:"Quản lý sách, nhập hàng, kiểm kê, theo dõi tồn kho, tra cứu NCC",home:"stock",can:{bookEdit:1},nav:[["SÁCH",["books"]],["KHO",["purchases","stock"]],["NHÀ CUNG CẤP",["suppliers"]]]},
+ manager:{label:"Quản lý",icon:"⌂",desc:"Toàn quyền quản lý cửa hàng, báo cáo & thống kê",home:"dashboard",can:{bookEdit:1,customerEdit:1,customerDelete:1,supplierEdit:1},nav:[["TỔNG QUAN",["dashboard"]],["NGHIỆP VỤ",["books","customers","suppliers","purchases","stock","invoices","promotions","returns","reports"]]]}
+};
+for(const r of Object.values(ROLES)) r.pages=r.nav.flatMap(g=>g[1]);
+let role="manager";
+try{const saved=localStorage.getItem("bookstore_role");if(ROLES[saved])role=saved}catch{}
+const can=k=>!!ROLES[role].can[k];
+function navLabel(p){if(p==="books"&&!can("bookEdit"))return"Tra cứu sách";if(p==="suppliers"&&!can("supplierEdit"))return"Tra cứu nhà cung cấp";return NAV_ITEMS[p][1]}
+function pageTitle(p){return NAV_ITEMS[p]?navLabel(p):titles[p]}
+function buildNav(){
+ $("#nav").innerHTML=ROLES[role].nav.map(([g,items])=>`<div class="nav-label">${g}</div>`+items.map(p=>`<button class="nav-item${p===page?" active":""}" data-page="${p}"><span>${NAV_ITEMS[p][0]}</span>${esc(navLabel(p))}</button>`).join("")).join("");
+ document.querySelectorAll(".nav-item").forEach(b=>b.addEventListener("click",()=>setPage(b.dataset.page)));
+}
+function buildRoleSwitch(){
+ const r=ROLES[role];$("#role-btn").innerHTML=`<span class="role-ic">${r.icon}</span><span><small>Vai trò</small><strong>${esc(r.label)}</strong></span><span class="role-caret">▾</span>`;
+ $("#role-menu").innerHTML=Object.entries(ROLES).map(([k,x])=>`<button class="role-opt${k===role?" active":""}" role="option" aria-selected="${k===role}" data-role="${k}"><span class="role-ic">${x.icon}</span><span><strong>${esc(x.label)}${k==="customer"?` <em>(${DEMO_CUSTOMER_CODE})</em>`:""}</strong><small>${esc(x.desc)}</small></span></button>`).join("");
+ $("#role-menu").querySelectorAll("[data-role]").forEach(b=>b.onclick=()=>{closeRoleMenu();applyRole(b.dataset.role)});
+ $("#eyebrow").textContent="VAI TRÒ: "+r.label.toUpperCase();
+}
+function closeRoleMenu(){$("#role-menu").hidden=true;$("#role-btn").setAttribute("aria-expanded","false")}
+$("#role-btn").addEventListener("click",e=>{e.stopPropagation();const m=$("#role-menu");m.hidden=!m.hidden;$("#role-btn").setAttribute("aria-expanded",String(!m.hidden))});
+document.addEventListener("click",e=>{if(!e.target.closest(".role-switch"))closeRoleMenu()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeRoleMenu()});
+function applyRole(k){
+ role=k;try{localStorage.setItem("bookstore_role",k)}catch{}
+ closeModal();buildRoleSwitch();setPage(ROLES[k].home);
+}
+function setPage(p){if(!ROLES[role].pages.includes(p))p=ROLES[role].home;page=p;currentQuery="";buildNav();$("#page-title").textContent=pageTitle(p);renderPage()}
 $("#refresh").addEventListener("click",()=>renderPage());
 
 async function renderPage(){
@@ -27,6 +60,9 @@ async function renderPage(){
     if(page==="purchases") return await purchasesPage();
     if(page==="invoices") return await invoicesPage();
     if(page==="promotions") return await promotionsPage();
+    if(page==="stock") return await stockPage();
+    if(page==="mytier") return await myTierPage();
+    if(page==="myinvoices") return await myInvoicesPage();
     if(page==="returns") return await returnsPage();
     if(page==="reports") return await reportsPage();
   }catch(e){c.innerHTML=`<div class="panel"><strong>Không thể tải dữ liệu</strong><p class="muted">${esc(e.message)}</p><button class="btn btn-primary" onclick="renderPage()">Thử lại</button></div>`}
@@ -56,31 +92,37 @@ async function dashboard(){
  document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>setPage(b.dataset.go));
 }
 function tableLayout(searchPlaceholder,addId,addLabel,headers,rows){
- return `${sectionHead(titles[page],"Quản lý và cập nhật dữ liệu nghiệp vụ.",addId,addLabel)}
+ return `${sectionHead(pageTitle(page),addId?"Quản lý và cập nhật dữ liệu nghiệp vụ.":"Tra cứu thông tin (chỉ xem).",addId,addLabel)}
  <div class="table-card"><div class="table-toolbar"><input class="search" id="table-search" placeholder="${searchPlaceholder}" value="${esc(currentQuery)}"><span class="hint">${rows.length} bản ghi</span></div>
  <div class="table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr></thead><tbody>${rows||""}</tbody></table></div></div>`;
 }
-function actions(type,id){return `<div class="actions"><button class="btn btn-light btn-small" data-edit="${type}:${id}">Sửa</button><button class="btn btn-danger btn-small" data-delete="${type}:${id}">Xóa</button></div>`}
+function actions(type,id){
+ const ed={book:"bookEdit",customer:"customerEdit",supplier:"supplierEdit"}[type],del={book:"bookEdit",customer:"customerDelete",supplier:"supplierEdit"}[type];
+ if(!can(ed))return type==="book"?`<button class="btn btn-light btn-small" data-view="${id}">Chi tiết</button>`:"—";
+ return `<div class="actions"><button class="btn btn-light btn-small" data-edit="${type}:${id}">Sửa</button>${can(del)?`<button class="btn btn-danger btn-small" data-delete="${type}:${id}">Xóa</button>`:""}</div>`}
 function bindTableSearch(fn){const s=$("#table-search");if(s)s.addEventListener("input",e=>{currentQuery=e.target.value;clearTimeout(bindTableSearch.timer);bindTableSearch.timer=setTimeout(fn,200)})}
-function bindActions(){document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.edit.split(":");editRecord(t,id)});document.querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.delete.split(":");deleteRecord(t,id)})}
+function bookDetail(id){const b=booksCache.find(x=>x.id===Number(id));if(!b)return;const row=(l,v)=>`<tr><td class="muted" style="width:34%">${l}</td><td><strong>${v}</strong></td></tr>`;modal("Thông tin sách",`<div class="book-cell" style="margin-bottom:14px"><div class="book-cover">B</div><div><div class="book-name" style="font-size:14px">${esc(b.title)}</div><div class="muted">${esc(b.author)}</div></div></div><table>${row("Mã sách",esc(b.code))}${row("Thể loại",esc(b.genre||"—"))}${row("Nhà xuất bản",esc(b.publisher||"—"))}${row("Năm xuất bản",b.publish_year||"—")}${row("Giá bán",money(b.price))}${row("Tình trạng",role==="customer"?(b.stock>0?"Còn hàng":"Hết hàng"):`${number(b.stock)} cuốn trong kho`)}</table>${b.description?`<p class="small-note" style="margin-top:12px">${esc(b.description)}</p>`:""}<div class="modal-actions"><button class="btn btn-primary" id="detail-close">Đóng</button></div>`);$("#detail-close").onclick=closeModal}
+function bindActions(){document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>bookDetail(b.dataset.view));document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.edit.split(":");editRecord(t,id)});document.querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.delete.split(":");deleteRecord(t,id)})}
 async function booksPage(){
  booksCache=await api("/api/books?q="+encodeURIComponent(currentQuery));
- const rows=booksCache.map(b=>`<tr><td><strong>${esc(b.code)}</strong></td><td><div class="book-cell"><div class="book-cover">B</div><div><div class="book-name">${esc(b.title)}</div><div class="muted">${esc(b.author)}</div></div></div></td><td>${esc(b.genre||"—")}</td><td>${money(b.price)}</td><td>${number(b.stock)}</td><td>${b.stock<=b.min_stock?'<span class="pill danger">Sắp hết / hết</span>':'<span class="pill">Đủ hàng</span>'}</td><td>${actions("book",b.id)}</td></tr>`).join("");
- $("#content").innerHTML=tableLayout("Tìm theo tên, mã sách, tác giả...","add-record","Thêm sách",["MÃ SÁCH","THÔNG TIN SÁCH","THỂ LOẠI","GIÁ BÁN","TỒN KHO","TRẠNG THÁI","THAO TÁC"],rows);
- $("#add-record").onclick=()=>recordModal("book");bindTableSearch(booksPage);bindActions();
+ const edit=can("bookEdit"),cust=role==="customer";
+ const status=b=>cust?(b.stock>0?'<span class="pill">Còn hàng</span>':'<span class="pill danger">Hết hàng</span>'):(b.stock<=b.min_stock?'<span class="pill danger">Sắp hết / hết</span>':'<span class="pill">Đủ hàng</span>');
+ const rows=booksCache.map(b=>`<tr><td><strong>${esc(b.code)}</strong></td><td><div class="book-cell"><div class="book-cover">B</div><div><div class="book-name">${esc(b.title)}</div><div class="muted">${esc(b.author)}</div></div></div></td><td>${esc(b.genre||"—")}</td><td>${money(b.price)}</td>${cust?"":`<td>${number(b.stock)}</td>`}<td>${status(b)}</td><td>${actions("book",b.id)}</td></tr>`).join("");
+ $("#content").innerHTML=tableLayout("Tìm theo tên, mã sách, tác giả, thể loại...",edit?"add-record":null,"Thêm sách",["MÃ SÁCH","THÔNG TIN SÁCH","THỂ LOẠI","GIÁ BÁN",...(cust?[]:["TỒN KHO"]),cust?"TÌNH TRẠNG":"TRẠNG THÁI",edit?"THAO TÁC":"CHI TIẾT"],rows);
+ if(edit)$("#add-record").onclick=()=>recordModal("book");bindTableSearch(booksPage);bindActions();
 }
 const tierKey=t=>({"Bạc":"silver","Vàng":"gold","Kim cương":"diamond"}[t]||"basic");
 async function customersPage(){
  customersCache=await api("/api/customers?q="+encodeURIComponent(currentQuery));
- const rows=customersCache.map(c=>`<tr><td><strong>${esc(c.code)}</strong></td><td><strong>${esc(c.name)}</strong><div class="muted">${esc(c.email)}</div></td><td>${esc(c.phone||"—")}</td><td>${esc(c.address||"—")}</td><td>${number(c.points)}</td><td><span class="pill tier-${tierKey(c.tier)}">${esc(c.tier)}</span></td><td>${actions("customer",c.id)}</td></tr>`).join("");
- $("#content").innerHTML=tableLayout("Tìm tên, mã hoặc số điện thoại...","add-record","Thêm khách hàng",["MÃ KH","KHÁCH HÀNG","SỐ ĐIỆN THOẠI","ĐỊA CHỈ","ĐIỂM","HẠNG","THAO TÁC"],rows);
- $("#add-record").onclick=()=>recordModal("customer");bindTableSearch(customersPage);bindActions();
+ const rows=customersCache.map(c=>`<tr><td><strong>${esc(c.code)}</strong></td><td><strong>${esc(c.name)}</strong><div class="muted">${esc(c.email)}</div></td><td>${esc(c.phone||"—")}</td><td>${esc(c.address||"—")}</td><td>${number(c.points)}</td><td><span class="pill tier-${tierKey(c.tier)}">${esc(c.tier)}</span></td>${can("customerEdit")?`<td>${actions("customer",c.id)}</td>`:""}</tr>`).join("");
+ $("#content").innerHTML=tableLayout("Tìm tên, mã hoặc số điện thoại...",can("customerEdit")?"add-record":null,"Thêm khách hàng",["MÃ KH","KHÁCH HÀNG","SỐ ĐIỆN THOẠI","ĐỊA CHỈ","ĐIỂM","HẠNG",...(can("customerEdit")?["THAO TÁC"]:[])],rows);
+ if(can("customerEdit"))$("#add-record").onclick=()=>recordModal("customer");bindTableSearch(customersPage);bindActions();
 }
 async function suppliersPage(){
  suppliersCache=await api("/api/suppliers?q="+encodeURIComponent(currentQuery));
- const rows=suppliersCache.map(s=>`<tr><td><strong>${esc(s.code)}</strong></td><td><strong>${esc(s.name)}</strong><div class="muted">${esc(s.email)}</div></td><td>${esc(s.phone||"—")}</td><td>${esc(s.address||"—")}</td><td>${s.active?'<span class="pill">Đang hoạt động</span>':'<span class="pill warn">Ngừng hoạt động</span>'}</td><td>${actions("supplier",s.id)}</td></tr>`).join("");
- $("#content").innerHTML=tableLayout("Tìm nhà cung cấp, mã, số điện thoại...","add-record","Thêm nhà cung cấp",["MÃ NCC","NHÀ CUNG CẤP","ĐIỆN THOẠI","ĐỊA CHỈ","TRẠNG THÁI","THAO TÁC"],rows);
- $("#add-record").onclick=()=>recordModal("supplier");bindTableSearch(suppliersPage);bindActions();
+ const rows=suppliersCache.map(s=>`<tr><td><strong>${esc(s.code)}</strong></td><td><strong>${esc(s.name)}</strong><div class="muted">${esc(s.email)}</div></td><td>${esc(s.phone||"—")}</td><td>${esc(s.address||"—")}</td><td>${s.active?'<span class="pill">Đang hoạt động</span>':'<span class="pill warn">Ngừng hoạt động</span>'}</td>${can("supplierEdit")?`<td>${actions("supplier",s.id)}</td>`:""}</tr>`).join("");
+ $("#content").innerHTML=tableLayout("Tìm nhà cung cấp, mã, số điện thoại...",can("supplierEdit")?"add-record":null,"Thêm nhà cung cấp",["MÃ NCC","NHÀ CUNG CẤP","ĐIỆN THOẠI","ĐỊA CHỈ","TRẠNG THÁI",...(can("supplierEdit")?["THAO TÁC"]:[])],rows);
+ if(can("supplierEdit"))$("#add-record").onclick=()=>recordModal("supplier");bindTableSearch(suppliersPage);bindActions();
 }
 function modal(title,body){
  $("#modal-root").innerHTML=`<div class="modal-backdrop" id="modal-backdrop"><div class="modal"><div class="modal-head"><h2>${title}</h2><button class="close" id="modal-close">Đóng</button></div><div class="modal-body">${body}</div></div></div>`;
@@ -124,6 +166,36 @@ function purchaseModal(books,suppliers){
  addLine();$("#add-purchase-line").onclick=addLine;$("#cancel-form").onclick=closeModal;
  $("#purchase-form").onsubmit=async e=>{e.preventDefault();const items=[...lines.querySelectorAll(".item-line")].map(r=>({book_id:Number(r.querySelector(".purchase-book").value),quantity:Number(r.querySelector(".purchase-qty").value),unit_cost:Number(r.querySelector(".purchase-cost").value)}));
  try{await api("/api/purchases",{method:"POST",body:JSON.stringify({supplier_id:Number(e.target.supplier_id.value),items,note:e.target.note.value})});closeModal();toast("Đã lưu phiếu nhập và cập nhật tồn kho.");renderPage()}catch(err){toast(err.message)}};
+}
+async function demoCustomer(){const list=await api("/api/customers?q="+encodeURIComponent(DEMO_CUSTOMER_CODE));const me=list.find(c=>c.code===DEMO_CUSTOMER_CODE);if(!me)throw new Error("Không tìm thấy khách hàng "+DEMO_CUSTOMER_CODE+" trong hệ thống.");return me}
+async function myTierPage(){
+ const [me,tiers]=await Promise.all([demoCustomer(),api("/api/membership")]);
+ const idx=Math.max(0,tiers.findIndex(t=>t.name===me.tier)),cur=tiers[idx],next=tiers[idx+1];
+ const pct=next?Math.min(100,Math.max(0,(me.points-cur.above)/(next.above-cur.above)*100)):100;
+ const need=next?next.above+1-me.points:0;
+ $("#content").innerHTML=`<div class="tier-hero"><div><div class="muted">${esc(me.code)} · ${esc(me.name)}</div><div class="tier-name"><span class="pill tier-${tierKey(me.tier)}" style="font-size:15px;padding:8px 16px">${esc(me.tier)}</span></div><div class="muted">${cur.rate?`Bạn được giảm <strong>${cur.rate}%</strong> trên mỗi hóa đơn (cộng dồn với khuyến mãi đang áp dụng).`:"Mua sắm để tích điểm và nhận ưu đãi theo hạng."}</div></div><div class="tier-points"><strong>${number(me.points)}</strong><span>điểm tích lũy</span><small class="muted">≈ ${money(me.points*10000)} đã mua</small></div></div>
+ <div class="panel" style="margin-bottom:18px"><h3>${next?`Tiến độ lên hạng ${esc(next.name)}`:"Bạn đang ở hạng cao nhất"}</h3><div class="sub">${next?`Cần thêm <strong>${number(need)} điểm</strong> (tương đương ${money(need*10000)} chi tiêu) để lên hạng ${esc(next.name)} và được giảm ${next.rate}%.`:"Cảm ơn bạn đã đồng hành cùng cửa hàng."}</div><div class="progress"><div class="progress-bar" style="width:${pct.toFixed(1)}%"></div></div></div>
+ <div class="table-card"><div class="table-toolbar"><strong>Quyền lợi theo hạng</strong><span class="hint">1 điểm = 10.000 ₫ đã mua</span></div><div class="table-wrap"><table><thead><tr><th>HẠNG</th><th>ĐIỀU KIỆN</th><th>ƯU ĐÃI</th></tr></thead><tbody>${tiers.map(t=>`<tr${t.name===me.tier?' style="background:#f6f8ff"':""}><td><span class="pill tier-${tierKey(t.name)}">${esc(t.name)}</span>${t.name===me.tier?' <small class="muted">· hạng của bạn</small>':""}</td><td>${t.above?"Trên "+number(t.above)+" điểm":"Mặc định"}</td><td><strong>${t.rate?"Giảm "+t.rate+"%":"Không giảm"}</strong></td></tr>`).join("")}</tbody></table></div></div>`;
+}
+async function myInvoicesPage(){
+ const me=await demoCustomer(),inv=await api("/api/invoices?customer_id="+me.id);invoicesCache=inv;
+ const paid=inv.filter(i=>i.payment_status==="Đã thanh toán"),spent=paid.reduce((s,i)=>s+i.total,0);
+ const cls=s=>s==="Đã thanh toán"?"":s==="Hủy thanh toán"?"danger":"warn";
+ const rows=inv.map(i=>`<tr><td><strong>${esc(i.code)}</strong></td><td>${money(i.total)}</td><td>${esc(i.payment_method)}</td><td>${new Date(i.created_at+"Z").toLocaleString("vi-VN")}</td><td><span class="pill ${cls(i.payment_status)}">${esc(i.payment_status)}</span></td><td><button class="btn btn-light btn-small" data-invoice="${i.id}">Chi tiết</button></td></tr>`).join("");
+ $("#content").innerHTML=sectionHead("Hóa đơn của tôi",`${esc(me.code)} · ${esc(me.name)}`)+`<div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">${stat("Hóa đơn đã thanh toán",number(paid.length),"Trong tổng "+inv.length+" hóa đơn","▧")}${stat("Tổng đã mua",money(spent),"Hóa đơn đã thanh toán","₫")}</div><div class="table-card"><div class="table-wrap"><table><thead><tr><th>MÃ HÓA ĐƠN</th><th>TỔNG TIỀN</th><th>THANH TOÁN</th><th>THỜI GIAN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="empty">Bạn chưa có hóa đơn nào</td></tr>'}</tbody></table></div></div>`;
+ document.querySelectorAll("[data-invoice]").forEach(b=>b.onclick=()=>invoiceDetail(b.dataset.invoice));
+}
+async function stockPage(){
+ const [books,checks]=await Promise.all([api("/api/books?q="+encodeURIComponent(currentQuery)),api("/api/stocktakes")]);booksCache=books;
+ const low=books.filter(b=>b.stock<=b.min_stock).length,total=books.reduce((s,b)=>s+b.stock,0);
+ const st=b=>b.stock===0?'<span class="pill danger">Hết hàng</span>':b.stock<=b.min_stock?'<span class="pill warn">Sắp hết</span>':'<span class="pill">Đủ hàng</span>';
+ const rows=books.map(b=>`<tr><td><strong>${esc(b.code)}</strong></td><td><div class="book-name">${esc(b.title)}</div><div class="muted">${esc(b.genre||"")}</div></td><td><strong>${number(b.stock)}</strong></td><td>${number(b.min_stock)}</td><td>${st(b)}</td><td><div class="actions"><input class="count-input" type="number" min="0" placeholder="Thực tế" data-count="${b.id}" aria-label="Số lượng kiểm đếm thực tế"><button class="btn btn-light btn-small" data-stocktake="${b.id}">Kiểm kê</button></div></td></tr>`).join("");
+ const hist=checks.map(c=>`<tr><td>${new Date(c.created_at+"Z").toLocaleString("vi-VN")}</td><td><strong>${esc(c.code)}</strong> · ${esc(c.title)}</td><td>${c.system_qty}</td><td>${c.counted_qty}</td><td><strong class="${c.diff<0?"neg":c.diff>0?"pos":""}">${c.diff>0?"+":""}${c.diff}</strong></td></tr>`).join("");
+ $("#content").innerHTML=sectionHead("Tồn kho & kiểm kê","Theo dõi tồn kho; nhập số lượng đếm thực tế rồi bấm Kiểm kê để đối chiếu và điều chỉnh.")+`<div class="stats" style="grid-template-columns:repeat(3,minmax(0,1fr))">${stat("Đầu sách",number(books.length),"Đang kinh doanh","▤")}${stat("Tổng số cuốn trong kho",number(total),"Theo hệ thống","▦")}${stat("Cần nhập thêm",number(low),"Đạt hoặc dưới mức tối thiểu","!")}</div>
+ <div class="table-card"><div class="table-toolbar"><input class="search" id="table-search" placeholder="Tìm theo tên, mã sách..." value="${esc(currentQuery)}"><span class="hint">${books.length} đầu sách</span></div><div class="table-wrap"><table><thead><tr><th>MÃ SÁCH</th><th>TÊN SÁCH</th><th>TỒN HỆ THỐNG</th><th>TỐI THIỂU</th><th>TRẠNG THÁI</th><th>KIỂM KÊ THỰC TẾ</th></tr></thead><tbody>${rows}</tbody></table></div></div>
+ <div class="table-card" style="margin-top:18px"><div class="table-toolbar"><strong>Lịch sử kiểm kê gần đây</strong></div><div class="table-wrap"><table><thead><tr><th>THỜI GIAN</th><th>SÁCH</th><th>HỆ THỐNG</th><th>THỰC TẾ</th><th>CHÊNH LỆCH</th></tr></thead><tbody>${hist||'<tr><td colspan="5" class="empty">Chưa có lần kiểm kê nào</td></tr>'}</tbody></table></div></div>`;
+ bindTableSearch(stockPage);
+ document.querySelectorAll("[data-stocktake]").forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.stocktake,v=document.querySelector(`[data-count="${id}"]`).value;if(v===""){toast("Hãy nhập số lượng đếm thực tế.");return}try{const before=booksCache.find(b=>b.id===Number(id)).stock,after=await api(`/api/books/${id}/stocktake`,{method:"POST",body:JSON.stringify({counted:Number(v)})});const d=after.stock-before;toast(d===0?"Số liệu khớp, không cần điều chỉnh.":`Đã điều chỉnh tồn kho (${d>0?"+":""}${d}).`);renderPage()}catch(e){toast(e.message)}});
 }
 async function promotionsPage(){
  const [promos,tiers]=await Promise.all([api("/api/promotions"),api("/api/membership")]);
@@ -275,4 +347,4 @@ async function loadReport(){
       <div class="table-card" style="margin-top:18px"><div class="table-toolbar"><strong>Báo cáo tồn kho</strong></div><div class="table-wrap"><table><thead><tr><th>MÃ SÁCH</th><th>TÊN SÁCH</th><th>TỒN KHO</th><th>GIÁ TRỊ TỒN (GIÁ NHẬP)</th></tr></thead><tbody>${r.stock.map(x=>`<tr><td>${esc(x.code)}</td><td>${esc(x.title)}</td><td>${x.stock}</td><td>${money(x.stock_value)}</td></tr>`).join("")}</tbody></table></div></div>`;
   }catch(e){toast(e.message)}
 }
-renderPage();
+buildRoleSwitch();setPage(ROLES[role].home);

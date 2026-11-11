@@ -76,6 +76,10 @@ async function initDb() {
       type TEXT NOT NULL DEFAULT 'percent', value REAL NOT NULL DEFAULT 0, max_discount REAL,
       min_subtotal REAL NOT NULL DEFAULT 0, min_qty INTEGER NOT NULL DEFAULT 0, min_tier TEXT,
       start_date TEXT, end_date TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS stock_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, book_id INTEGER NOT NULL, system_qty INTEGER NOT NULL, counted_qty INTEGER NOT NULL,
+      diff INTEGER NOT NULL, note TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(book_id) REFERENCES books(id)
     )`
   ];
   for (const sql of schema) await run(sql);
@@ -191,6 +195,33 @@ async function initDb() {
     if (status === "Đã thanh toán") {
       await run("UPDATE customers SET points=points+? WHERE id=?", [Math.floor(total / 10000), customer.id]);
     }
+  }
+
+  // Hóa đơn demo cho KH001 (tài khoản dùng khi xem giao diện vai trò Khách hàng). Hạng Bạc → giảm thêm 5% sau khuyến mãi.
+  const kh001 = await get("SELECT id FROM customers WHERE code='KH001'");
+  const kh001Invoices = [
+    ["HD-DEMO-016", "Đã thanh toán", "Tiền mặt", "2026-11-03 10:15:00", [["S001", 2], ["S004", 1]], null],
+    ["HD-DEMO-017", "Đã thanh toán", "Chuyển khoản", "2026-11-07 15:40:00", [["S005", 3]], "KM10"],
+    ["HD-DEMO-018", "Chưa thanh toán", "Tiền mặt", "2026-11-09 09:05:00", [["S002", 2]], null]
+  ];
+  for (const [invCode, status, method, createdAt, items, promoCode] of kh001Invoices) {
+    if (!kh001 || await get("SELECT id FROM invoices WHERE code=?", [invCode])) continue;
+    const lines = [];
+    for (const [bookCode, quantity] of items) lines.push({ book: await get("SELECT * FROM books WHERE code=?", [bookCode]), quantity });
+    if (lines.some(l => !l.book)) continue;
+    const subtotal = lines.reduce((sum, l) => sum + l.book.price * l.quantity, 0);
+    const promo = promoCode ? await get("SELECT * FROM promotions WHERE code=?", [promoCode]) : null;
+    const promoAmount = promo ? bestPromotion([promo], subtotal, lines.reduce((n, l) => n + l.quantity, 0), "Bạc", "2026-11-11")?.amount || 0 : 0;
+    const memberAmount = Math.round((subtotal - promoAmount) * 5 / 100);
+    const total = subtotal - promoAmount - memberAmount;
+    const inv = await run("INSERT INTO invoices(code,customer_id,subtotal,discount,total,payment_method,payment_status,note,created_at,promotion_code,promotion_name,promotion_desc,promotion_amount,member_tier,member_rate,member_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [invCode, kh001.id, subtotal, promoAmount + memberAmount, total, method, status, "Hóa đơn dữ liệu demo", createdAt,
+       promoAmount ? promo.code : null, promoAmount ? promo.name : null, promoAmount ? describePromotion(promo) : null, promoAmount, "Bạc", 5, memberAmount]);
+    for (const l of lines) {
+      await run("INSERT INTO invoice_items(invoice_id,book_id,quantity,unit_price) VALUES(?,?,?,?)", [inv.id, l.book.id, l.quantity, l.book.price]);
+      await run("UPDATE books SET stock=MAX(0, stock-?) WHERE id=?", [l.quantity, l.book.id]);
+    }
+    if (status === "Đã thanh toán") await run("UPDATE customers SET points=points+? WHERE id=?", [Math.floor(total / 10000), kh001.id]);
   }
 
 }
@@ -348,8 +379,21 @@ app.delete("/api/suppliers/:id", asyncRoute(async(req,res)=>{
   await run("DELETE FROM suppliers WHERE id=?",[req.params.id]); res.json({ok:true});
 }));
 
-app.get("/api/invoices", asyncRoute(async(req,res)=>res.json(await all(
-  "SELECT i.*,COALESCE(c.name,'Khách vãng lai') customer_name FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id ORDER BY i.id DESC"))));
+app.get("/api/invoices", asyncRoute(async(req,res)=>{
+  const byCustomer=req.query.customer_id?"WHERE i.customer_id=?":"";
+  res.json(await all(`SELECT i.*,COALESCE(c.name,'Khách vãng lai') customer_name FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id ${byCustomer} ORDER BY i.id DESC`,req.query.customer_id?[Number(req.query.customer_id)]:[]));
+}));
+// Kiểm kê kho: ghi nhận số lượng đếm thực tế và điều chỉnh tồn kho theo kết quả.
+app.post("/api/books/:id/stocktake", asyncRoute(async(req,res)=>{
+  const book=await get("SELECT * FROM books WHERE id=? AND active=1",[req.params.id]); if(!book)return notFound(res,"Sách");
+  const counted=Number(req.body.counted);
+  if(!Number.isInteger(counted)||counted<0) throw Object.assign(new Error("Số lượng kiểm đếm phải là số nguyên từ 0 trở lên."),{status:400});
+  await run("INSERT INTO stock_checks(book_id,system_qty,counted_qty,diff,note) VALUES(?,?,?,?,?)",[book.id,book.stock,counted,counted-book.stock,req.body.note||""]);
+  await run("UPDATE books SET stock=? WHERE id=?",[counted,book.id]);
+  res.json(await get("SELECT * FROM books WHERE id=?",[book.id]));
+}));
+app.get("/api/stocktakes", asyncRoute(async(req,res)=>res.json(await all(
+  "SELECT s.*,b.code,b.title FROM stock_checks s JOIN books b ON b.id=s.book_id ORDER BY s.id DESC LIMIT 15"))));
 app.get("/api/membership",(req,res)=>res.json([{name:"Thường",above:0,rate:0},...TIER_RULES.slice().reverse()]));
 app.get("/api/promotions", asyncRoute(async(req,res)=>{
   const rows=await all("SELECT p.*,COALESCE(u.n,0) used_count,COALESCE(u.amt,0) used_amount FROM promotions p LEFT JOIN (SELECT promotion_code,COUNT(*) n,SUM(promotion_amount) amt FROM invoices WHERE payment_status='Đã thanh toán' AND promotion_code IS NOT NULL GROUP BY promotion_code) u ON u.promotion_code=p.code ORDER BY p.id");

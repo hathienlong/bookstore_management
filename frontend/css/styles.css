@@ -25,3 +25,22 @@
 .pill.tier-gold,.promo-badge.tier-gold{background:#fff4df;color:#a76c05}
 .pill.tier-diamond,.promo-badge.tier-diamond{background:#e9f1ff;color:#2748bf}
 .pill.tier-basic{background:#f3f5fa;color:#738198}
+/* Vai trò (demo) */
+.role-switch{position:relative}
+.role-btn{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:7px 12px;font:inherit;cursor:pointer;text-align:left;color:var(--ink)}
+.role-btn:hover{border-color:#c9d4ff;background:#f9faff}
+.role-btn small{display:block;font-size:9px;color:var(--muted);letter-spacing:.4px}.role-btn strong{display:block;font-size:12px}
+.role-ic{width:28px;height:28px;border-radius:8px;background:var(--blue2);color:var(--blue);display:grid;place-items:center;font-size:14px;flex-shrink:0}
+.role-caret{color:#9aa5b7;font-size:11px}
+.role-menu{position:absolute;right:0;top:calc(100% + 6px);width:340px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px #172b4d26;padding:6px;z-index:40}
+.role-menu[hidden]{display:none}
+.role-opt{display:flex;gap:11px;align-items:flex-start;width:100%;border:0;background:transparent;border-radius:9px;padding:10px;text-align:left;font:inherit;cursor:pointer;color:var(--ink)}
+.role-opt:hover{background:#f6f8ff}.role-opt.active{background:var(--blue2)}
+.role-opt strong{display:block;font-size:12px}.role-opt em{font-style:normal;color:var(--muted);font-weight:500}
+.role-opt small{display:block;color:var(--muted);font-size:10px;line-height:1.5;margin-top:2px}
+.count-input{width:84px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit}
+.neg{color:var(--red)}.pos{color:var(--green)}
+.tier-hero{display:flex;justify-content:space-between;align-items:center;gap:20px;background:linear-gradient(135deg,#f3f6ff,#fff);border:1px solid var(--line);border-radius:13px;padding:26px;margin-bottom:18px;box-shadow:var(--shadow)}
+.tier-name{margin:12px 0}.tier-points{text-align:right}.tier-points strong{display:block;font-size:38px;letter-spacing:-1px;color:var(--blue)}.tier-points span{font-size:11px;color:var(--muted)}.tier-points small{display:block;margin-top:4px}
+.progress{height:10px;background:#f0f2f8;border-radius:10px;overflow:hidden;margin-top:6px}.progress-bar{height:100%;background:var(--blue);border-radius:10px;transition:width .4s}
+@media(max-width:680px){.role-menu{width:min(340px,calc(100vw - 24px))}.tier-hero{flex-direction:column;align-items:flex-start}.tier-points{text-align:left}}
