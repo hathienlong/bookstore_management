@@ -70,9 +70,25 @@ async function initDb() {
       book_id INTEGER NOT NULL, quantity INTEGER NOT NULL, type TEXT NOT NULL, refund REAL NOT NULL DEFAULT 0,
       reason TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY(invoice_id) REFERENCES invoices(id), FOREIGN KEY(book_id) REFERENCES books(id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS promotions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'percent', value REAL NOT NULL DEFAULT 0, max_discount REAL,
+      min_subtotal REAL NOT NULL DEFAULT 0, min_qty INTEGER NOT NULL DEFAULT 0, min_tier TEXT,
+      start_date TEXT, end_date TEXT, active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`
   ];
   for (const sql of schema) await run(sql);
+  // Nâng cấp CSDL cũ: lưu khuyến mãi đã áp dụng trên hóa đơn (snapshot, không đổi khi sửa chương trình sau này).
+  const invCols = (await all("PRAGMA table_info(invoices)")).map(c => c.name);
+  for (const [col, def] of [["promotion_code","TEXT"],["promotion_name","TEXT"],["promotion_desc","TEXT"],["promotion_amount","REAL NOT NULL DEFAULT 0"]])
+    if (!invCols.includes(col)) await run(`ALTER TABLE invoices ADD COLUMN ${col} ${def}`);
+  const demoPromos = [
+    ["KM10","Giảm 10% hóa đơn từ 300.000 ₫","percent",10,50000,300000,0,null],
+    ["KM50K","Giảm 50.000 ₫ hóa đơn từ 500.000 ₫","fixed",50000,null,500000,0,null],
+    ["KMVANG","Ưu đãi hội viên Vàng trở lên","percent",5,100000,0,0,"Vàng"]
+  ];
+  for (const x of demoPromos) await run("INSERT OR IGNORE INTO promotions(code,name,type,value,max_discount,min_subtotal,min_qty,min_tier) VALUES(?,?,?,?,?,?,?,?)", x);
   const count = await get("SELECT COUNT(*) AS n FROM books");
   if (count.n === 0) {
     const books = [
@@ -178,6 +194,62 @@ async function initDb() {
 
 }
 
+/* ===== Khuyến mãi: tự chọn đúng 1 chương trình có số tiền giảm lớn nhất ===== */
+const TIERS = ["Thường","Bạc","Vàng","Kim cương"];
+const vnd = n => new Intl.NumberFormat("vi-VN").format(Math.round(n)) + " ₫";
+const vnDate = d => d.split("-").reverse().join("/");
+const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
+function conditionText(p) {
+  const cond = [];
+  if (p.min_subtotal > 0) cond.push(`hóa đơn từ ${vnd(p.min_subtotal)}`);
+  if (p.min_qty > 0) cond.push(`từ ${p.min_qty} cuốn`);
+  if (p.min_tier) cond.push(`hạng ${p.min_tier} trở lên`);
+  return cond.length ? cond.join(", ") : "Mọi hóa đơn";
+}
+function benefitText(p) {
+  return p.type === "percent" ? `Giảm ${p.value}%${p.max_discount ? ` (tối đa ${vnd(p.max_discount)})` : ""}` : `Giảm ${vnd(p.value)}`;
+}
+function describePromotion(p) {
+  const cond = conditionText(p);
+  const until = p.end_date ? ` · đến ${vnDate(p.end_date)}` : "";
+  return (cond === "Mọi hóa đơn" ? "Áp dụng cho mọi hóa đơn: " : "Áp dụng cho " + cond + ": ") + benefitText(p).toLowerCase() + until;
+}
+function promotionStatus(p, today = todayLocal()) {
+  if (!p.active) return "Tạm dừng";
+  if (p.start_date && today < p.start_date) return "Sắp diễn ra";
+  if (p.end_date && today > p.end_date) return "Hết hạn";
+  return "Đang áp dụng";
+}
+function bestPromotion(promos, subtotal, qty, tier, today = todayLocal()) {
+  let best = null;
+  for (const p of promos) {
+    if (!p.active) continue;
+    if (p.start_date && today < p.start_date) continue;
+    if (p.end_date && today > p.end_date) continue;
+    if (subtotal < p.min_subtotal || qty < p.min_qty) continue;
+    if (p.min_tier && TIERS.indexOf(tier || "Thường") < TIERS.indexOf(p.min_tier)) continue;
+    let amount = p.type === "percent" ? subtotal * p.value / 100 : p.value;
+    if (p.max_discount) amount = Math.min(amount, p.max_discount);
+    amount = Math.min(subtotal, Math.round(amount));
+    if (amount > 0 && (!best || amount > best.amount)) best = { code: p.code, name: p.name, description: describePromotion(p), amount };
+  }
+  return best;
+}
+async function priceCart(customer_id, items) {
+  const clean = [];
+  for (const item of items) {
+    const book = await get("SELECT * FROM books WHERE id=? AND active=1", [Number(item.book_id)]);
+    if (!book) throw Object.assign(new Error("Có sách không tồn tại."), { status: 400 });
+    const qty = Math.floor(Number(item.quantity));
+    if (!Number.isInteger(qty) || qty < 1) throw Object.assign(new Error("Số lượng phải từ 1 trở lên."), { status: 400 });
+    clean.push({ book, qty });
+  }
+  const subtotal = clean.reduce((s, x) => s + x.book.price * x.qty, 0);
+  const qty = clean.reduce((s, x) => s + x.qty, 0);
+  const customer = customer_id ? await get("SELECT tier FROM customers WHERE id=?", [customer_id]) : null;
+  const promo = bestPromotion(await all("SELECT * FROM promotions WHERE active=1"), subtotal, qty, customer?.tier);
+  return { clean, subtotal, promotion: promo };
+}
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const notFound = (res, what = "Dữ liệu") => res.status(404).json({ error: `${what} không tồn tại.` });
 const required = (value, label) => {
@@ -265,26 +337,31 @@ app.delete("/api/suppliers/:id", asyncRoute(async(req,res)=>{
 
 app.get("/api/invoices", asyncRoute(async(req,res)=>res.json(await all(
   "SELECT i.*,COALESCE(c.name,'Khách vãng lai') customer_name FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id ORDER BY i.id DESC"))));
+app.get("/api/promotions", asyncRoute(async(req,res)=>{
+  const rows=await all("SELECT p.*,COALESCE(u.n,0) used_count,COALESCE(u.amt,0) used_amount FROM promotions p LEFT JOIN (SELECT promotion_code,COUNT(*) n,SUM(promotion_amount) amt FROM invoices WHERE payment_status='Đã thanh toán' AND promotion_code IS NOT NULL GROUP BY promotion_code) u ON u.promotion_code=p.code ORDER BY p.id");
+  res.json(rows.map(p=>({...p,description:describePromotion(p),condition:conditionText(p),benefit:benefitText(p),status:promotionStatus(p)})));
+}));
+app.post("/api/invoices/preview", asyncRoute(async(req,res)=>{
+  const {customer_id,items}=req.body;
+  if(!Array.isArray(items)||!items.length) return res.json({subtotal:0,promotion:null});
+  const {subtotal,promotion}=await priceCart(customer_id||null,items);
+  res.json({subtotal,promotion});
+}));
 app.post("/api/invoices", asyncRoute(async(req,res)=>{
-  const {customer_id,items,payment_method,discount,note}=req.body;
+  const {customer_id,items,payment_method,note}=req.body;
   if(!Array.isArray(items)||!items.length) throw Object.assign(new Error("Hóa đơn phải có ít nhất một đầu sách."),{status:400});
-  const clean=[];
-  for(const item of items){
-    const book=await get("SELECT * FROM books WHERE id=? AND active=1",[Number(item.book_id)]);
-    if(!book) throw Object.assign(new Error("Có sách không tồn tại."),{status:400});
-    const qty=Math.floor(Number(item.quantity));
-    if(!Number.isInteger(qty)||qty<1) throw Object.assign(new Error("Số lượng phải từ 1 trở lên."),{status:400});
+  const {clean,subtotal,promotion}=await priceCart(customer_id||null,items);
+  for(const {book,qty} of clean)
     if(book.stock<qty) throw Object.assign(new Error(`Sách "${book.title}" không đủ tồn kho. Còn ${book.stock} cuốn.`),{status:400});
-    clean.push({book,qty});
-  }
-  const subtotal=clean.reduce((sum,x)=>sum+x.book.price*x.qty,0);
-  const disc=Math.min(subtotal,Math.max(0,Number(discount)||0));
+  // Giảm giá hoàn toàn tự động: máy chủ chọn 1 khuyến mãi tốt nhất, không nhận số tiền giảm từ giao diện.
+  const promoAmount=promotion?promotion.amount:0;
+  const disc=promoAmount;
   const total=subtotal-disc;
   await run("BEGIN TRANSACTION");
   try {
     const invCode=code("HD");
-    const ir=await run("INSERT INTO invoices(code,customer_id,subtotal,discount,total,payment_method,payment_status,note) VALUES(?,?,?,?,?,?,?,?)",
-      [invCode,customer_id||null,subtotal,disc,total,payment_method||"Tiền mặt","Đã thanh toán",note||""]);
+    const ir=await run("INSERT INTO invoices(code,customer_id,subtotal,discount,total,payment_method,payment_status,note,promotion_code,promotion_name,promotion_desc,promotion_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      [invCode,customer_id||null,subtotal,disc,total,payment_method||"Tiền mặt","Đã thanh toán",note||"",promotion?.code||null,promotion?.name||null,promotion?.description||null,promoAmount]);
     for(const x of clean){
       await run("INSERT INTO invoice_items(invoice_id,book_id,quantity,unit_price) VALUES(?,?,?,?)",[ir.id,x.book.id,x.qty,x.book.price]);
       await run("UPDATE books SET stock=stock-? WHERE id=?",[x.qty,x.book.id]);
@@ -340,7 +417,9 @@ app.post("/api/returns", asyncRoute(async(req,res)=>{
   if(!purchased) throw Object.assign(new Error("Sách không thuộc hóa đơn này."),{status:400});
   const already=await get("SELECT COALESCE(SUM(quantity),0) n FROM returns WHERE invoice_id=? AND book_id=?",[invoice_id,book_id]);
   if(qty>purchased.quantity-already.n) throw Object.assign(new Error("Số lượng đổi/trả vượt số lượng đã mua còn lại."),{status:400});
-  const refund=type==="Trả hàng"?purchased.unit_price*qty:0;
+  // Hoàn tiền theo giá thực trả: phân bổ đều phần giảm giá của hóa đơn (khuyến mãi + giảm thủ công).
+  const ratio=invoice.subtotal>0?invoice.total/invoice.subtotal:1;
+  const refund=type==="Trả hàng"?Math.round(purchased.unit_price*qty*ratio):0;
   const r=await run("INSERT INTO returns(code,invoice_id,book_id,quantity,type,refund,reason) VALUES(?,?,?,?,?,?,?)",[code("DT"),invoice_id,book_id,qty,type,refund,reason||""]);
   if(type==="Trả hàng") await run("UPDATE books SET stock=stock+? WHERE id=?",[qty,book_id]);
   res.status(201).json(await get("SELECT * FROM returns WHERE id=?",[r.id]));

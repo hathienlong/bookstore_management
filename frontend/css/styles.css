@@ -14,3 +14,9 @@
 .combo-opt.selected strong{color:var(--blue)}
 .combo-note{padding:9px 10px;color:var(--muted);font-size:11px}
 .item-line .combo-input{padding:9px}
+/* Khuyến mãi trong hóa đơn */
+.promo-line{align-items:flex-start;gap:12px}
+.promo-line[hidden]{display:none}
+.promo-badge{display:inline-block;background:#e9f8f2;color:#168264;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.3px;margin-right:4px}
+.promo-desc{display:block;color:var(--muted);font-size:10px;margin-top:3px;font-weight:400;line-height:1.5;white-space:normal}
+.promo-amount{color:var(--green);white-space:nowrap}
