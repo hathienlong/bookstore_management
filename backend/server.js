@@ -81,13 +81,14 @@ async function initDb() {
   for (const sql of schema) await run(sql);
   // Nâng cấp CSDL cũ: lưu khuyến mãi đã áp dụng trên hóa đơn (snapshot, không đổi khi sửa chương trình sau này).
   const invCols = (await all("PRAGMA table_info(invoices)")).map(c => c.name);
-  for (const [col, def] of [["promotion_code","TEXT"],["promotion_name","TEXT"],["promotion_desc","TEXT"],["promotion_amount","REAL NOT NULL DEFAULT 0"]])
+  for (const [col, def] of [["promotion_code","TEXT"],["promotion_name","TEXT"],["promotion_desc","TEXT"],["promotion_amount","REAL NOT NULL DEFAULT 0"],["member_tier","TEXT"],["member_rate","REAL NOT NULL DEFAULT 0"],["member_amount","REAL NOT NULL DEFAULT 0"]])
     if (!invCols.includes(col)) await run(`ALTER TABLE invoices ADD COLUMN ${col} ${def}`);
   const demoPromos = [
     ["KM10","Giảm 10% hóa đơn từ 300.000 ₫","percent",10,50000,300000,0,null],
-    ["KM50K","Giảm 50.000 ₫ hóa đơn từ 500.000 ₫","fixed",50000,null,500000,0,null],
-    ["KMVANG","Ưu đãi hội viên Vàng trở lên","percent",5,100000,0,0,"Vàng"]
+    ["KM50K","Giảm 50.000 ₫ hóa đơn từ 500.000 ₫","fixed",50000,null,500000,0,null]
   ];
+  // Ưu đãi theo hạng nay do hệ thống hạng thành viên đảm nhiệm (cộng dồn với khuyến mãi thường).
+  await run("DELETE FROM promotions WHERE code='KMVANG'");
   for (const x of demoPromos) await run("INSERT OR IGNORE INTO promotions(code,name,type,value,max_discount,min_subtotal,min_qty,min_tier) VALUES(?,?,?,?,?,?,?,?)", x);
   const count = await get("SELECT COUNT(*) AS n FROM books");
   if (count.n === 0) {
@@ -196,6 +197,13 @@ async function initDb() {
 
 /* ===== Khuyến mãi: tự chọn đúng 1 chương trình có số tiền giảm lớn nhất ===== */
 const TIERS = ["Thường","Bạc","Vàng","Kim cương"];
+/* ===== Hạng thành viên: 1 điểm = 10.000 ₫ đã mua; hạng xét theo điểm tích lũy (phải VƯỢT ngưỡng) ===== */
+const TIER_RULES = [{ name: "Kim cương", above: 1000, rate: 12 }, { name: "Vàng", above: 250, rate: 8 }, { name: "Bạc", above: 100, rate: 5 }];
+const tierInfo = points => TIER_RULES.find(r => points > r.above) || { name: "Thường", above: 0, rate: 0 };
+async function syncTier(id) {
+  const c = await get("SELECT points FROM customers WHERE id=?", [id]);
+  if (c) await run("UPDATE customers SET tier=? WHERE id=?", [tierInfo(c.points).name, id]);
+}
 const vnd = n => new Intl.NumberFormat("vi-VN").format(Math.round(n)) + " ₫";
 const vnDate = d => d.split("-").reverse().join("/");
 const todayLocal = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
@@ -246,9 +254,14 @@ async function priceCart(customer_id, items) {
   }
   const subtotal = clean.reduce((s, x) => s + x.book.price * x.qty, 0);
   const qty = clean.reduce((s, x) => s + x.qty, 0);
-  const customer = customer_id ? await get("SELECT tier FROM customers WHERE id=?", [customer_id]) : null;
-  const promo = bestPromotion(await all("SELECT * FROM promotions WHERE active=1"), subtotal, qty, customer?.tier);
-  return { clean, subtotal, promotion: promo };
+  const customer = customer_id ? await get("SELECT points FROM customers WHERE id=?", [customer_id]) : null;
+  const tier = tierInfo(customer?.points || 0);
+  const promo = bestPromotion(await all("SELECT * FROM promotions WHERE active=1"), subtotal, qty, tier.name);
+  // Ưu đãi hạng cộng dồn với 1 khuyến mãi tốt nhất: tính trên số tiền còn lại sau khuyến mãi.
+  const base = subtotal - (promo ? promo.amount : 0);
+  const memberAmount = Math.min(base, Math.round(base * tier.rate / 100));
+  const member = memberAmount > 0 ? { tier: tier.name, rate: tier.rate, amount: memberAmount, description: `Ưu đãi thành viên hạng ${tier.name}: giảm ${tier.rate}% sau khuyến mãi, cộng dồn với chương trình khác` } : null;
+  return { clean, subtotal, promotion: promo, member };
 }
 const asyncRoute = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const notFound = (res, what = "Dữ liệu") => res.status(404).json({ error: `${what} không tồn tại.` });
@@ -300,13 +313,13 @@ app.get("/api/customers", asyncRoute(async(req,res)=>{
 }));
 app.post("/api/customers", asyncRoute(async(req,res)=>{
   const c=req.body; required(c.code,"Mã khách hàng"); required(c.name,"Tên khách hàng");
-  const r=await run("INSERT INTO customers(code,name,phone,email,address,points,tier) VALUES(?,?,?,?,?,?,?)",[c.code,c.name,c.phone||"",c.email||"",c.address||"",Number(c.points)||0,c.tier||"Thường"]);
+  const r=await run("INSERT INTO customers(code,name,phone,email,address,points,tier) VALUES(?,?,?,?,?,?,?)",[c.code,c.name,c.phone||"",c.email||"",c.address||"",Number(c.points)||0,tierInfo(Number(c.points)||0).name]);
   res.status(201).json(await get("SELECT * FROM customers WHERE id=?",[r.id]));
 }));
 app.put("/api/customers/:id", asyncRoute(async(req,res)=>{
   const old=await get("SELECT * FROM customers WHERE id=?",[req.params.id]); if(!old)return notFound(res,"Khách hàng");
   const c={...old,...req.body};
-  await run("UPDATE customers SET code=?,name=?,phone=?,email=?,address=?,points=?,tier=? WHERE id=?",[c.code,c.name,c.phone||"",c.email||"",c.address||"",Number(c.points)||0,c.tier||"Thường",req.params.id]);
+  await run("UPDATE customers SET code=?,name=?,phone=?,email=?,address=?,points=?,tier=? WHERE id=?",[c.code,c.name,c.phone||"",c.email||"",c.address||"",Number(c.points)||0,tierInfo(Number(c.points)||0).name,req.params.id]);
   res.json(await get("SELECT * FROM customers WHERE id=?",[req.params.id]));
 }));
 app.delete("/api/customers/:id", asyncRoute(async(req,res)=>{
@@ -337,36 +350,38 @@ app.delete("/api/suppliers/:id", asyncRoute(async(req,res)=>{
 
 app.get("/api/invoices", asyncRoute(async(req,res)=>res.json(await all(
   "SELECT i.*,COALESCE(c.name,'Khách vãng lai') customer_name FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id ORDER BY i.id DESC"))));
+app.get("/api/membership",(req,res)=>res.json([{name:"Thường",above:0,rate:0},...TIER_RULES.slice().reverse()]));
 app.get("/api/promotions", asyncRoute(async(req,res)=>{
   const rows=await all("SELECT p.*,COALESCE(u.n,0) used_count,COALESCE(u.amt,0) used_amount FROM promotions p LEFT JOIN (SELECT promotion_code,COUNT(*) n,SUM(promotion_amount) amt FROM invoices WHERE payment_status='Đã thanh toán' AND promotion_code IS NOT NULL GROUP BY promotion_code) u ON u.promotion_code=p.code ORDER BY p.id");
   res.json(rows.map(p=>({...p,description:describePromotion(p),condition:conditionText(p),benefit:benefitText(p),status:promotionStatus(p)})));
 }));
 app.post("/api/invoices/preview", asyncRoute(async(req,res)=>{
   const {customer_id,items}=req.body;
-  if(!Array.isArray(items)||!items.length) return res.json({subtotal:0,promotion:null});
-  const {subtotal,promotion}=await priceCart(customer_id||null,items);
-  res.json({subtotal,promotion});
+  if(!Array.isArray(items)||!items.length) return res.json({subtotal:0,promotion:null,member:null});
+  const {subtotal,promotion,member}=await priceCart(customer_id||null,items);
+  res.json({subtotal,promotion,member});
 }));
 app.post("/api/invoices", asyncRoute(async(req,res)=>{
   const {customer_id,items,payment_method,note}=req.body;
   if(!Array.isArray(items)||!items.length) throw Object.assign(new Error("Hóa đơn phải có ít nhất một đầu sách."),{status:400});
-  const {clean,subtotal,promotion}=await priceCart(customer_id||null,items);
+  const {clean,subtotal,promotion,member}=await priceCart(customer_id||null,items);
   for(const {book,qty} of clean)
     if(book.stock<qty) throw Object.assign(new Error(`Sách "${book.title}" không đủ tồn kho. Còn ${book.stock} cuốn.`),{status:400});
   // Giảm giá hoàn toàn tự động: máy chủ chọn 1 khuyến mãi tốt nhất, không nhận số tiền giảm từ giao diện.
   const promoAmount=promotion?promotion.amount:0;
-  const disc=promoAmount;
+  const memberAmount=member?member.amount:0;
+  const disc=promoAmount+memberAmount;
   const total=subtotal-disc;
   await run("BEGIN TRANSACTION");
   try {
     const invCode=code("HD");
-    const ir=await run("INSERT INTO invoices(code,customer_id,subtotal,discount,total,payment_method,payment_status,note,promotion_code,promotion_name,promotion_desc,promotion_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-      [invCode,customer_id||null,subtotal,disc,total,payment_method||"Tiền mặt","Đã thanh toán",note||"",promotion?.code||null,promotion?.name||null,promotion?.description||null,promoAmount]);
+    const ir=await run("INSERT INTO invoices(code,customer_id,subtotal,discount,total,payment_method,payment_status,note,promotion_code,promotion_name,promotion_desc,promotion_amount,member_tier,member_rate,member_amount) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [invCode,customer_id||null,subtotal,disc,total,payment_method||"Tiền mặt","Đã thanh toán",note||"",promotion?.code||null,promotion?.name||null,promotion?.description||null,promoAmount,member?.tier||null,member?.rate||0,memberAmount]);
     for(const x of clean){
       await run("INSERT INTO invoice_items(invoice_id,book_id,quantity,unit_price) VALUES(?,?,?,?)",[ir.id,x.book.id,x.qty,x.book.price]);
       await run("UPDATE books SET stock=stock-? WHERE id=?",[x.qty,x.book.id]);
     }
-    if(customer_id) await run("UPDATE customers SET points=points+? WHERE id=?",[Math.floor(total/10000),customer_id]);
+    if(customer_id){ await run("UPDATE customers SET points=points+? WHERE id=?",[Math.floor(total/10000),customer_id]); await syncTier(customer_id); }
     await run("COMMIT");
     res.status(201).json(await get("SELECT * FROM invoices WHERE id=?",[ir.id]));
   } catch(e){ await run("ROLLBACK"); throw e; }
@@ -421,7 +436,10 @@ app.post("/api/returns", asyncRoute(async(req,res)=>{
   const ratio=invoice.subtotal>0?invoice.total/invoice.subtotal:1;
   const refund=type==="Trả hàng"?Math.round(purchased.unit_price*qty*ratio):0;
   const r=await run("INSERT INTO returns(code,invoice_id,book_id,quantity,type,refund,reason) VALUES(?,?,?,?,?,?,?)",[code("DT"),invoice_id,book_id,qty,type,refund,reason||""]);
-  if(type==="Trả hàng") await run("UPDATE books SET stock=stock+? WHERE id=?",[qty,book_id]);
+  if(type==="Trả hàng"){
+    await run("UPDATE books SET stock=stock+? WHERE id=?",[qty,book_id]);
+    if(invoice.customer_id){ await run("UPDATE customers SET points=MAX(0,points-?) WHERE id=?",[Math.floor(refund/10000),invoice.customer_id]); await syncTier(invoice.customer_id); }
+  }
   res.status(201).json(await get("SELECT * FROM returns WHERE id=?",[r.id]));
 }));
 
@@ -444,6 +462,8 @@ app.use((err,req,res,next)=>{
   res.status(err.status||500).json({error:err.message||"Lỗi máy chủ."});
 });
 
-initDb().then(()=>{
+initDb().then(async()=>{
+  for (const c of await all("SELECT id FROM customers")) await syncTier(c.id); // đồng bộ hạng theo điểm cho dữ liệu cũ
+  
   app.listen(PORT,()=>console.log(`Bookstore Management đang chạy tại http://localhost:${PORT}`));
 }).catch(err=>{console.error("Không thể khởi tạo cơ sở dữ liệu:",err);process.exit(1);});

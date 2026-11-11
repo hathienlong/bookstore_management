@@ -20,3 +20,8 @@
 .promo-badge{display:inline-block;background:#e9f8f2;color:#168264;border-radius:6px;padding:2px 7px;font-size:10px;font-weight:800;letter-spacing:.3px;margin-right:4px}
 .promo-desc{display:block;color:var(--muted);font-size:10px;margin-top:3px;font-weight:400;line-height:1.5;white-space:normal}
 .promo-amount{color:var(--green);white-space:nowrap}
+/* Hạng thành viên */
+.pill.tier-silver,.promo-badge.tier-silver{background:#eef1f5;color:#566275}
+.pill.tier-gold,.promo-badge.tier-gold{background:#fff4df;color:#a76c05}
+.pill.tier-diamond,.promo-badge.tier-diamond{background:#e9f1ff;color:#2748bf}
+.pill.tier-basic{background:#f3f5fa;color:#738198}
