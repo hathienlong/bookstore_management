@@ -499,7 +499,7 @@ app.get("/api/reports/summary", asyncRoute(async(req,res)=>{
   res.json({sales,top,stock,monthly,statusCounts});
 }));
 
-app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"public","index.html")));
+app.get("*",(req,res)=>res.sendFile(path.join(__dirname,"..","frontend","index.html")));
 app.use((err,req,res,next)=>{
   console.error(err);
   if(err.code==="SQLITE_CONSTRAINT") return res.status(409).json({error:"Dữ liệu bị trùng hoặc vi phạm ràng buộc. Hãy kiểm tra mã và thông tin liên quan."});

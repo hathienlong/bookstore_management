@@ -44,10 +44,10 @@ $("#role-btn").addEventListener("click",e=>{e.stopPropagation();const m=$("#role
 document.addEventListener("click",e=>{if(!e.target.closest(".role-switch"))closeRoleMenu()});
 document.addEventListener("keydown",e=>{if(e.key==="Escape")closeRoleMenu()});
 function applyRole(k){
- role=k;try{localStorage.setItem("bookstore_role",k)}catch{}
+ role=k;shop.genre=null;shop.q="";shop.bookId=null;try{localStorage.setItem("bookstore_role",k)}catch{}
  closeModal();buildRoleSwitch();setPage(ROLES[k].home);
 }
-function setPage(p){if(!ROLES[role].pages.includes(p))p=ROLES[role].home;page=p;currentQuery="";buildNav();$("#page-title").textContent=pageTitle(p);renderPage()}
+function setPage(p){if(!ROLES[role].pages.includes(p))p=ROLES[role].home;if(p!==page||p==="books")shop.bookId=null;page=p;currentQuery="";buildNav();$("#page-title").textContent=pageTitle(p);renderPage()}
 $("#refresh").addEventListener("click",()=>renderPage());
 
 async function renderPage(){
@@ -103,7 +103,48 @@ function actions(type,id){
 function bindTableSearch(fn){const s=$("#table-search");if(s)s.addEventListener("input",e=>{currentQuery=e.target.value;clearTimeout(bindTableSearch.timer);bindTableSearch.timer=setTimeout(fn,200)})}
 function bookDetail(id){const b=booksCache.find(x=>x.id===Number(id));if(!b)return;const row=(l,v)=>`<tr><td class="muted" style="width:34%">${l}</td><td><strong>${v}</strong></td></tr>`;modal("Thông tin sách",`<div class="book-cell" style="margin-bottom:14px"><div class="book-cover">B</div><div><div class="book-name" style="font-size:14px">${esc(b.title)}</div><div class="muted">${esc(b.author)}</div></div></div><table>${row("Mã sách",esc(b.code))}${row("Thể loại",esc(b.genre||"—"))}${row("Nhà xuất bản",esc(b.publisher||"—"))}${row("Năm xuất bản",b.publish_year||"—")}${row("Giá bán",money(b.price))}${row("Tình trạng",role==="customer"?(b.stock>0?"Còn hàng":"Hết hàng"):`${number(b.stock)} cuốn trong kho`)}</table>${b.description?`<p class="small-note" style="margin-top:12px">${esc(b.description)}</p>`:""}<div class="modal-actions"><button class="btn btn-primary" id="detail-close">Đóng</button></div>`);$("#detail-close").onclick=closeModal}
 function bindActions(){document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>bookDetail(b.dataset.view));document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.edit.split(":");editRecord(t,id)});document.querySelectorAll("[data-delete]").forEach(b=>b.onclick=()=>{const [t,id]=b.dataset.delete.split(":");deleteRecord(t,id)})}
+
+/* ===== Giao diện tra cứu sách của Khách hàng: tìm kiếm + chọn thể loại → lưới sách → chi tiết ===== */
+const GENRE_COLORS={"Văn học":"#8c2f39","Thiếu nhi":"#b34d12","Kỹ năng":"#1f6f78","Fantasy":"#5b3f9a","Kinh doanh":"#1f4e79","Khoa học":"#2a6f4a","Tâm lý":"#a23b72","Tiểu thuyết":"#6b4a2f","Tài chính":"#3b4a5c","Lịch sử":"#7a5c1e","Truyện tranh":"#b83a2e","Kinh tế":"#2d6a8f"};
+const FALLBACK_COLORS=["#4a5d8f","#8f4a6b","#3f7a6a","#7a5a3f","#5a4a8f"];
+function genreColor(g){if(GENRE_COLORS[g])return GENRE_COLORS[g];let h=0;for(const ch of String(g||""))h=(h*31+ch.charCodeAt(0))>>>0;return FALLBACK_COLORS[h%FALLBACK_COLORS.length]}
+const coverHtml=b=>`<div class="cover" style="--c:${genreColor(b.genre)}"><div class="cover-frame"><span class="cover-title">${esc(b.title)}</span></div></div>`;
+const shop={genre:null,q:"",bookId:null};
+function shopCard(b){return `<button class="shop-card" data-book="${b.id}">${coverHtml(b)}${b.stock>0?"":'<span class="shop-badge">Hết hàng</span>'}<div class="shop-name">${esc(b.title)}</div><div class="shop-author">${esc(b.author)}</div><div class="shop-price">${money(b.price)}</div></button>`}
+function bindShopCards(root){root.querySelectorAll("[data-book]").forEach(c=>c.onclick=()=>{shop.bookId=Number(c.dataset.book);renderShopDetail();$("#content").scrollIntoView({block:"start"})})}
+function shopFilter(){const toks=fold(shop.q).split(/\s+/).filter(Boolean);return booksCache.filter(b=>(!shop.genre||shop.genre==="__all"||b.genre===shop.genre)&&toks.every(t=>fold(`${b.code} ${b.title} ${b.author} ${b.genre}`).includes(t)))}
+function renderShopResults(){
+ const box=$("#shop-results");
+ if(!shop.genre&&!shop.q.trim()){box.innerHTML='<div class="shop-hint"><strong>Bạn muốn đọc gì hôm nay?</strong><span>Nhập tên sách hoặc tác giả ở trên, hoặc chọn một thể loại để xem các đầu sách.</span></div>';return}
+ const list=shopFilter(),g=shop.genre&&shop.genre!=="__all"?shop.genre:"";
+ box.innerHTML=`<div class="shop-count">${list.length} cuốn${g?` · thể loại ${esc(g)}`:""}${shop.q.trim()?` · từ khóa “${esc(shop.q.trim())}”`:""}</div>`+(list.length?`<div class="shop-grid">${list.map(shopCard).join("")}</div>`:'<div class="empty">Không tìm thấy sách phù hợp</div>');
+ bindShopCards(box);
+}
+async function customerBooksPage(){
+ booksCache=await api("/api/books");
+ if(shop.bookId)return renderShopDetail();
+ const genres=[...new Set(booksCache.map(b=>b.genre).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"vi"));
+ const chips=()=>`<button class="chip${shop.genre==="__all"?" active":""}" data-genre="__all">Tất cả (${booksCache.length})</button>`+genres.map(g=>`<button class="chip${shop.genre===g?" active":""}" data-genre="${esc(g)}"><i style="background:${genreColor(g)}"></i>${esc(g)}</button>`).join("");
+ $("#content").innerHTML=`<div class="shop-search"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="shop-q" placeholder="Tra cứu theo tên sách, tác giả hoặc mã sách..." autocomplete="off" value="${esc(shop.q)}"></div><div class="chip-label">THỂ LOẠI</div><div class="chips" id="chips">${chips()}</div><div id="shop-results"></div>`;
+ const bindChips=()=>$("#chips").querySelectorAll("[data-genre]").forEach(c=>c.onclick=()=>{shop.genre=shop.genre===c.dataset.genre?null:c.dataset.genre;$("#chips").innerHTML=chips();bindChips();renderShopResults()});
+ bindChips();
+ $("#shop-q").addEventListener("input",e=>{shop.q=e.target.value;renderShopResults()});
+ renderShopResults();
+}
+function renderShopDetail(){
+ const b=booksCache.find(x=>x.id===shop.bookId);
+ if(!b){shop.bookId=null;return customerBooksPage()}
+ const related=booksCache.filter(x=>x.genre===b.genre&&x.id!==b.id),color=genreColor(b.genre);
+ const row=(l,v)=>`<tr><td class="muted">${l}</td><td><strong>${v}</strong></td></tr>`;
+ $("#content").innerHTML=`<button class="btn btn-light" id="shop-back">← Quay lại danh sách</button>
+ <div class="shop-detail panel"><div class="shop-info"><span class="pill" style="background:${color};color:#fff">${esc(b.genre||"Chưa phân loại")}</span><h2>${esc(b.title)}</h2><div class="shop-by">Tác giả: <strong>${esc(b.author||"—")}</strong></div><div class="shop-big-price">${money(b.price)}</div><div>${b.stock>0?'<span class="pill">Còn hàng</span>':'<span class="pill danger">Hết hàng</span>'}</div><table class="shop-meta">${row("Mã sách",esc(b.code))}${row("Nhà xuất bản",esc(b.publisher||"—"))}${row("Năm xuất bản",b.publish_year||"—")}${row("Thể loại",esc(b.genre||"—"))}</table>${b.description?`<p class="shop-desc">${esc(b.description)}</p>`:""}</div><div class="shop-cover">${coverHtml(b)}</div></div>
+ <div class="panel related"><div class="related-head"><div><h3>Sách cùng thể loại</h3><div class="sub" style="margin:0">${related.length?`${related.length} cuốn khác thuộc “${esc(b.genre)}” — lướt ngang để xem thêm`:`Chưa có sách khác thuộc thể loại “${esc(b.genre||"")}”`}</div></div>${related.length?'<div class="related-nav"><button class="btn btn-light btn-small" id="rel-prev" aria-label="Trước">‹</button><button class="btn btn-light btn-small" id="rel-next" aria-label="Sau">›</button></div>':""}</div>${related.length?`<div class="hscroll" id="hscroll">${related.map(shopCard).join("")}</div>`:""}</div>`;
+ $("#shop-back").onclick=()=>{shop.bookId=null;customerBooksPage()};
+ bindShopCards($("#content"));
+ const hs=$("#hscroll");if(hs){$("#rel-prev").onclick=()=>hs.scrollBy({left:-hs.clientWidth*.8,behavior:"smooth"});$("#rel-next").onclick=()=>hs.scrollBy({left:hs.clientWidth*.8,behavior:"smooth"})}
+}
 async function booksPage(){
+ if(role==="customer")return customerBooksPage();
  booksCache=await api("/api/books?q="+encodeURIComponent(currentQuery));
  const edit=can("bookEdit"),cust=role==="customer";
  const status=b=>cust?(b.stock>0?'<span class="pill">Còn hàng</span>':'<span class="pill danger">Hết hàng</span>'):(b.stock<=b.min_stock?'<span class="pill danger">Sắp hết / hết</span>':'<span class="pill">Đủ hàng</span>');
