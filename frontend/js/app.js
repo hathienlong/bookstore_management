@@ -222,7 +222,7 @@ async function myInvoicesPage(){
  const me=await demoCustomer(),inv=await api("/api/invoices?customer_id="+me.id);invoicesCache=inv;
  const paid=inv.filter(i=>i.payment_status==="Đã thanh toán"),spent=paid.reduce((s,i)=>s+i.total,0);
  const cls=s=>s==="Đã thanh toán"?"":s==="Hủy thanh toán"?"danger":"warn";
- const rows=inv.map(i=>`<tr><td><strong>${esc(i.code)}</strong></td><td>${money(i.total)}</td><td>${esc(i.payment_method)}</td><td>${new Date(i.created_at+"Z").toLocaleString("vi-VN")}</td><td><span class="pill ${cls(i.payment_status)}">${esc(i.payment_status)}</span></td><td><button class="btn btn-light btn-small" data-invoice="${i.id}">Chi tiết</button></td></tr>`).join("");
+ const rows=inv.map(i=>`<tr><td>${invCodeCell(i)}</td><td>${money(i.total)}</td><td>${esc(i.payment_method)}</td><td>${new Date(i.created_at+"Z").toLocaleString("vi-VN")}</td><td><span class="pill ${cls(i.payment_status)}">${esc(i.payment_status)}</span></td><td><button class="btn btn-light btn-small" data-invoice="${i.id}">Chi tiết</button></td></tr>`).join("");
  $("#content").innerHTML=sectionHead("Hóa đơn của tôi",`${esc(me.code)} · ${esc(me.name)}`)+`<div class="stats" style="grid-template-columns:repeat(2,minmax(0,1fr))">${stat("Hóa đơn đã thanh toán",number(paid.length),"Trong tổng "+inv.length+" hóa đơn","▧")}${stat("Tổng đã mua",money(spent),"Hóa đơn đã thanh toán","₫")}</div><div class="table-card"><div class="table-wrap"><table><thead><tr><th>MÃ HÓA ĐƠN</th><th>TỔNG TIỀN</th><th>THANH TOÁN</th><th>THỜI GIAN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="6" class="empty">Bạn chưa có hóa đơn nào</td></tr>'}</tbody></table></div></div>`;
  document.querySelectorAll("[data-invoice]").forEach(b=>b.onclick=()=>invoiceDetail(b.dataset.invoice));
 }
@@ -248,7 +248,7 @@ async function promotionsPage(){
 }
 async function invoicesPage(){
  const inv=await api("/api/invoices");invoicesCache=inv;
- const rows=inv.map(i=>`<tr><td><strong>${esc(i.code)}</strong></td><td>${esc(i.customer_name)}</td><td>${money(i.total)}</td><td>${esc(i.payment_method)}</td><td>${new Date(i.created_at+"Z").toLocaleString("vi-VN")}</td><td><span class="pill">${esc(i.payment_status)}</span></td><td><button class="btn btn-light btn-small" data-invoice="${i.id}">Chi tiết</button></td></tr>`).join("");
+ const rows=inv.map(i=>`<tr><td>${invCodeCell(i)}</td><td>${esc(i.customer_name)}</td><td>${money(i.total)}</td><td>${esc(i.payment_method)}</td><td>${new Date(i.created_at+"Z").toLocaleString("vi-VN")}</td><td><span class="pill">${esc(i.payment_status)}</span></td><td><button class="btn btn-light btn-small" data-invoice="${i.id}">Chi tiết</button></td></tr>`).join("");
  $("#content").innerHTML=sectionHead("Bán hàng / Hóa đơn","Tạo hóa đơn, hệ thống tự áp dụng khuyến mãi tốt nhất và ghi nhận thanh toán.","new-invoice","Tạo hóa đơn")+`<div class="table-card"><div class="table-toolbar"><span class="hint">${inv.length} hóa đơn</span><span class="hint">Hóa đơn mới được thanh toán theo phương thức đã chọn</span></div><div class="table-wrap"><table><thead><tr><th>MÃ HÓA ĐƠN</th><th>KHÁCH HÀNG</th><th>TỔNG TIỀN</th><th>THANH TOÁN</th><th>THỜI GIAN</th><th>TRẠNG THÁI</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan="7" class="empty">Chưa có hóa đơn</td></tr>'}</tbody></table></div></div>`;
  $("#new-invoice").onclick=invoiceModal;
  document.querySelectorAll("[data-invoice]").forEach(b=>b.onclick=()=>invoiceDetail(b.dataset.invoice));
@@ -327,22 +327,85 @@ async function invoiceModal(){
  try{const invoice=await api("/api/invoices",{method:"POST",body:JSON.stringify({customer_id:customerCombo.value||null,payment_method:e.target.payment_method.value,note:e.target.note.value,items})});closeModal();toast("Tạo hóa đơn thành công: "+invoice.code);renderPage()}catch(err){toast(err.message)}};
 }
 async function invoiceDetail(id){
- try{const i=await api("/api/invoices/"+id);modal("Chi tiết hóa đơn "+i.code,`<div class="small-note">Khách hàng: <strong>${esc(i.customer_name)}</strong><br>Ngày tạo: ${new Date(i.created_at+"Z").toLocaleString("vi-VN")}<br>Phương thức: ${esc(i.payment_method)}</div><div class="table-wrap" style="margin-top:15px"><table><thead><tr><th>SÁCH</th><th>SL</th><th>ĐƠN GIÁ</th><th>THÀNH TIỀN</th></tr></thead><tbody>${i.items.map(x=>`<tr><td>${esc(x.title)}</td><td>${x.quantity}</td><td>${money(x.unit_price)}</td><td>${money(x.quantity*x.unit_price)}</td></tr>`).join("")}</tbody></table></div><div class="total-line"><span>Tạm tính</span><strong>${money(i.subtotal)}</strong></div>${i.promotion_code?`<div class="total-line promo-line"><span><span class="promo-badge">${esc(i.promotion_code)}</span> ${esc(i.promotion_name||"")}<small class="promo-desc">${esc(i.promotion_desc||"")}</small></span><strong class="promo-amount">−${money(i.promotion_amount)}</strong></div>`:""}${i.member_amount>0?`<div class="total-line promo-line"><span><span class="promo-badge tier-${tierKey(i.member_tier)}">${esc(i.member_tier)}</span> Ưu đãi thành viên ${i.member_rate}%<small class="promo-desc">Cộng dồn với khuyến mãi, tính sau khuyến mãi</small></span><strong class="promo-amount">−${money(i.member_amount)}</strong></div>`:""}${!i.promotion_code&&!(i.member_amount>0)?`<div class="total-line"><span>Giảm giá</span><strong>${money(i.discount)}</strong></div>`:(i.discount-(i.promotion_amount||0)-(i.member_amount||0)>0?`<div class="total-line"><span>Giảm giá khác</span><strong>${money(i.discount-(i.promotion_amount||0)-(i.member_amount||0))}</strong></div>`:"")}<div class="total-line final"><span>Tổng cộng</span><strong>${money(i.total)}</strong></div><div class="modal-actions"><button class="btn btn-primary" id="detail-close">Đóng</button></div>`);$("#detail-close").onclick=closeModal}catch(e){toast(e.message)}
+ try{const i=await api("/api/invoices/"+id);modal("Chi tiết hóa đơn "+i.code,`<div class="small-note">Khách hàng: <strong>${esc(i.customer_name)}</strong><br>Ngày tạo: ${new Date(i.created_at+"Z").toLocaleString("vi-VN")}<br>Phương thức: ${esc(i.payment_method)}</div>${i.kind==="exchange"?`<div class="small-note" style="margin-top:12px;padding:10px 12px;background:#fff8e8;border-radius:8px">Hóa đơn chênh lệch đổi hàng của hóa đơn <strong>${esc(i.ref_code||"")}</strong>.<br>${esc(i.note||"")}</div>`:`<div class="table-wrap" style="margin-top:15px"><table><thead><tr><th>SÁCH</th><th>SL</th><th>ĐƠN GIÁ</th><th>THÀNH TIỀN</th></tr></thead><tbody>${i.items.map(x=>`<tr><td>${esc(x.title)}</td><td>${x.quantity}</td><td>${money(x.unit_price)}</td><td>${money(x.quantity*x.unit_price)}</td></tr>`).join("")}</tbody></table></div>`}<div class="total-line"><span>Tạm tính</span><strong>${money(i.subtotal)}</strong></div>${i.promotion_code?`<div class="total-line promo-line"><span><span class="promo-badge">${esc(i.promotion_code)}</span> ${esc(i.promotion_name||"")}<small class="promo-desc">${esc(i.promotion_desc||"")}</small></span><strong class="promo-amount">−${money(i.promotion_amount)}</strong></div>`:""}${i.member_amount>0?`<div class="total-line promo-line"><span><span class="promo-badge tier-${tierKey(i.member_tier)}">${esc(i.member_tier)}</span> Ưu đãi thành viên ${i.member_rate}%<small class="promo-desc">Cộng dồn với khuyến mãi, tính sau khuyến mãi</small></span><strong class="promo-amount">−${money(i.member_amount)}</strong></div>`:""}${!i.promotion_code&&!(i.member_amount>0)?`<div class="total-line"><span>Giảm giá</span><strong>${money(i.discount)}</strong></div>`:(i.discount-(i.promotion_amount||0)-(i.member_amount||0)>0?`<div class="total-line"><span>Giảm giá khác</span><strong>${money(i.discount-(i.promotion_amount||0)-(i.member_amount||0))}</strong></div>`:"")}<div class="total-line final"><span>Tổng cộng</span><strong>${money(i.total)}</strong></div>${(i.returns||[]).length?`<div class="sub" style="margin:18px 0 6px"><strong>Lịch sử đổi / trả</strong></div>${i.returns.map(r=>`<div class="total-line" style="font-size:11px"><span><span class="pill ${r.type==="Trả hàng"?"danger":"warn"}">${esc(r.type)}</span> ${esc(r.book_title)}${r.new_title?" → "+esc(r.new_title):""} ×${r.quantity}<small class="promo-desc">${esc(r.code)} · ${new Date(r.created_at+"Z").toLocaleDateString("vi-VN")}</small></span><span>${returnEffect(r)}</span></div>`).join("")}`:""}${i.returnable?`<div class="small-note" style="margin-top:12px">Còn <strong>${i.days_left} ngày</strong> để đổi / trả hàng cho hóa đơn này.</div>`:""}<div class="modal-actions"><button class="btn btn-primary" id="detail-close">Đóng</button></div>`);$("#detail-close").onclick=closeModal}catch(e){toast(e.message)}
+}
+function invCodeCell(i){return `<strong>${esc(i.code)}</strong>${i.kind==="exchange"?` <span class="pill warn">Đổi hàng</span><div class="muted" style="font-size:10px">Chênh lệch của ${esc(i.ref_code||"")}</div>`:""}`}
+function returnEffect(r){
+ if(r.type==="Trả hàng")return `<strong class="neg">−${money(r.refund)}</strong>`;
+ if(r.diff>0)return `<strong class="pos">+${money(r.diff)}</strong>`;
+ if(r.diff<0)return `<strong class="neg">−${money(-r.diff)}</strong>`;
+ return `<span class="muted">0 ₫</span>`;
+}
+function returnNote(r){
+ if(r.type==="Trả hàng")return "Hoàn tiền · trừ vào doanh thu";
+ if(r.diff>0)return `Khách trả thêm · hóa đơn ${esc(r.exchange_code||"")}`;
+ if(r.diff<0)return "Hoàn chênh lệch · trừ vào doanh thu";
+ return "Không chênh lệch";
 }
 async function returnsPage(){
- const [inv,books]=await Promise.all([api("/api/invoices"),api("/api/books")]);invoicesCache=inv;booksCache=books;
- const rows=[];
- for(const i of inv){const detail=await api("/api/invoices/"+i.id);for(const r of detail.returns||[])rows.push(`<tr><td>${esc(r.code)}</td><td>${esc(i.code)}</td><td>${esc(r.title)}</td><td>${r.quantity}</td><td>${esc(r.type)}</td><td>${money(r.refund)}</td><td>${new Date(r.created_at+"Z").toLocaleString("vi-VN")}</td></tr>`)}
- $("#content").innerHTML=sectionHead("Đổi / trả hàng","Ghi nhận yêu cầu đổi hoặc trả sách theo hóa đơn đã lập.","new-return","Tạo yêu cầu đổi / trả")+`<div class="table-card"><div class="table-toolbar"><span class="hint">${rows.length} giao dịch đổi / trả</span><span class="hint">Trả hàng sẽ cộng lại kho theo bản demo</span></div><div class="table-wrap"><table><thead><tr><th>MÃ GIAO DỊCH</th><th>HÓA ĐƠN</th><th>SÁCH</th><th>SỐ LƯỢNG</th><th>LOẠI</th><th>HOÀN TIỀN</th><th>THỜI GIAN</th></tr></thead><tbody>${rows.join("")||'<tr><td colspan="7" class="empty">Chưa có giao dịch đổi / trả</td></tr>'}</tbody></table></div></div>`;
+ const [list,inv,books]=await Promise.all([api("/api/returns"),api("/api/invoices"),api("/api/books")]);invoicesCache=inv;booksCache=books;
+ const days=inv[0]?.return_days||7,eligible=inv.filter(i=>i.returnable).length;
+ const rows=list.map(r=>`<tr><td><strong>${esc(r.code)}</strong></td><td>${esc(r.invoice_code)}<div class="muted" style="font-size:10px">${esc(r.customer_name)}</div></td><td><span class="pill ${r.type==="Trả hàng"?"danger":"warn"}">${esc(r.type)}</span></td><td>${esc(r.book_title)}${r.new_title?`<div class="muted" style="font-size:10px">→ ${esc(r.new_title)}</div>`:""}</td><td>${r.quantity}</td><td>${returnEffect(r)}<div class="muted" style="font-size:10px">${returnNote(r)}</div></td><td>${new Date(r.created_at+"Z").toLocaleString("vi-VN")}</td></tr>`).join("");
+ $("#content").innerHTML=sectionHead("Đổi / trả hàng",`Chỉ đổi / trả trong <strong>${days} ngày</strong> kể từ ngày lập hóa đơn (hóa đơn đã thanh toán).`,"new-return","Tạo yêu cầu đổi / trả")+`<div class="table-card"><div class="table-toolbar"><span class="hint">${list.length} giao dịch · ${eligible} hóa đơn còn trong hạn đổi / trả</span><span class="hint">Trả hàng: hoàn tiền trừ doanh thu · Đổi sách đắt hơn: lập hóa đơn thu thêm · Đổi sách rẻ hơn: hoàn chênh lệch</span></div><div class="table-wrap"><table><thead><tr><th>MÃ GIAO DỊCH</th><th>HÓA ĐƠN</th><th>LOẠI</th><th>SÁCH</th><th>SL</th><th>TIỀN</th><th>THỜI GIAN</th></tr></thead><tbody>${rows||'<tr><td colspan="7" class="empty">Chưa có giao dịch đổi / trả</td></tr>'}</tbody></table></div></div>`;
  $("#new-return").onclick=()=>returnModal(inv,books);
 }
 function returnModal(inv,books){
- if(!inv.length){toast("Cần có hóa đơn trước khi tạo yêu cầu đổi / trả.");return}
- modal("Ghi nhận đổi / trả hàng",`<form id="return-form"><div class="form-grid"><div class="field"><label>Hóa đơn *</label><select name="invoice_id" id="return-invoice" required>${inv.map(i=>`<option value="${i.id}">${esc(i.code)} — ${esc(i.customer_name)}</option>`).join("")}</select></div><div class="field"><label>Hình thức *</label><select name="type"><option>Trả hàng</option><option>Đổi hàng</option></select></div><div class="field"><label>Sách *</label><select name="book_id" id="return-book" required></select></div><div class="field"><label>Số lượng *</label><input name="quantity" type="number" min="1" value="1" required></div><div class="field full"><label>Lý do</label><textarea name="reason"></textarea></div></div><p class="small-note">Bản demo ghi nhận đổi hàng nhưng chưa quản lý việc chọn sách thay thế. Hoàn tiền được tính theo đơn giá trong hóa đơn.</p><div class="modal-actions"><button type="button" class="btn btn-light" id="cancel-form">Hủy</button><button class="btn btn-primary">Lưu giao dịch</button></div></form>`);
- const form=$("#return-form");
- async function loadBooks(){const i=await api("/api/invoices/"+form.invoice_id.value);$("#return-book").innerHTML=i.items.map(x=>`<option value="${x.book_id}">${esc(x.title)} — đã mua ${x.quantity}</option>`).join("")}
- $("#return-invoice").onchange=loadBooks;loadBooks();$("#cancel-form").onclick=closeModal;
- form.onsubmit=async e=>{e.preventDefault();try{await api("/api/returns",{method:"POST",body:JSON.stringify(readForm(form))});closeModal();toast("Đã lưu giao dịch đổi / trả.");renderPage()}catch(err){toast(err.message)}};
+ const eligible=inv.filter(i=>i.returnable),days=inv[0]?.return_days||7;
+ if(!eligible.length){toast(`Không có hóa đơn nào còn trong hạn ${days} ngày để đổi / trả.`);return}
+ modal("Ghi nhận đổi / trả hàng",`<form id="return-form"><div class="field"><label>Hóa đơn * <span class="muted" style="font-weight:400">(đã thanh toán, trong ${days} ngày)</span></label><div id="ret-inv"></div></div>
+ <div class="form-grid" style="margin-top:14px"><div class="field"><label>Hình thức *</label><select name="type"><option>Trả hàng</option><option>Đổi hàng</option></select></div><div class="field"><label>Số lượng *</label><input name="quantity" type="number" min="1" value="1" required></div>
+ <div class="field full" style="grid-column:1/-1"><label>Sách trong hóa đơn *</label><select name="book_id" id="ret-book" required><option value="">— Chọn hóa đơn trước —</option></select></div>
+ <div class="field" id="ret-new-wrap" style="grid-column:1/-1" hidden><label>Đổi sang sách *</label><div id="ret-new"></div></div>
+ <div class="field" style="grid-column:1/-1"><label>Lý do</label><textarea name="reason"></textarea></div></div>
+ <div class="panel" id="ret-summary" style="margin-top:14px;padding:14px"><span class="muted">Chọn hóa đơn và sách để xem số tiền.</span></div>
+ <div id="ret-pay" hidden style="margin-top:14px;padding:14px;border:1px solid #f4dca8;background:#fff8e8;border-radius:10px"><div class="form-grid"><div class="field"><label>Phương thức thanh toán phần chênh lệch</label><select name="payment_method"><option>Tiền mặt</option><option>Chuyển khoản</option><option>Thẻ ngân hàng</option></select></div><label style="display:flex;gap:8px;align-items:flex-end;font-size:11px;font-weight:600"><input type="checkbox" id="ret-paid" style="width:auto"> <span id="ret-paid-label">Đã thu đủ tiền chênh lệch</span></label></div></div>
+ <div class="modal-actions"><button type="button" class="btn btn-light" id="cancel-form">Hủy</button><button class="btn btn-primary" id="ret-submit">Lưu giao dịch</button></div></form>`);
+ const form=$("#return-form");let cur=null,ratio=1,remaining={};
+ const invCombo=combo({items:eligible.map(i=>({value:i.id,code:i.code,label:`${i.code} · ${i.customer_name}`,search:`${i.code} ${i.customer_name}`,html:`<strong>${esc(i.code)}</strong> · ${esc(i.customer_name)}<small>${money(i.total)} · còn ${i.days_left} ngày đổi / trả</small>`})),placeholder:"Gõ mã hóa đơn hoặc tên khách...",onChange:loadInvoice});$("#ret-inv").appendChild(invCombo);
+ const newItems=books.filter(b=>b.stock>0).map(b=>({value:b.id,code:b.code,price:b.price,stock:b.stock,label:`${b.code} · ${b.title}`,search:`${b.code} ${b.title} ${b.author||""}`,html:`<strong>${esc(b.code)}</strong> · ${esc(b.title)}<small>${money(b.price)} · còn ${b.stock}</small>`}));
+ const newCombo=combo({items:newItems,placeholder:"Gõ mã hoặc tựa sách mới...",onChange:()=>update()});$("#ret-new").appendChild(newCombo);
+ async function loadInvoice(item){
+  cur=null;remaining={};$("#ret-book").innerHTML='<option value="">— Chọn hóa đơn trước —</option>';
+  if(item){try{cur=await api("/api/invoices/"+item.value)}catch(e){toast(e.message);return}
+   ratio=cur.subtotal>0?cur.total/cur.subtotal:1;
+   for(const x of cur.items)remaining[x.book_id]=(remaining[x.book_id]||0)+x.quantity;
+   for(const r of cur.returns||[])remaining[r.book_id]=(remaining[r.book_id]||0)-r.quantity;
+   const opts=cur.items.filter((x,idx,a)=>a.findIndex(y=>y.book_id===x.book_id)===idx&&remaining[x.book_id]>0);
+   $("#ret-book").innerHTML=opts.length?opts.map(x=>`<option value="${x.book_id}">${esc(x.title)} — còn ${remaining[x.book_id]} cuốn có thể đổi / trả (${money(x.unit_price)})</option>`).join(""):'<option value="">Hóa đơn này đã đổi / trả hết</option>'}
+  update();
+ }
+ function calc(){
+  if(!cur||!form.book_id.value)return null;
+  const it=cur.items.find(x=>x.book_id===Number(form.book_id.value)),qty=Math.max(0,Math.floor(Number(form.quantity.value))||0),isEx=form.type.value==="Đổi hàng";
+  const returnValue=Math.round(it.unit_price*qty*ratio),nb=newCombo.item,newValue=isEx&&nb?nb.price*qty:0;
+  return {it,qty,isEx,returnValue,nb,newValue,diff:isEx&&nb?newValue-returnValue:0,max:remaining[it.book_id]};
+ }
+ function update(){
+  const c=calc(),isEx=form.type.value==="Đổi hàng";$("#ret-new-wrap").hidden=!isEx;
+  const sum=$("#ret-summary"),pay=$("#ret-pay");pay.hidden=true;
+  if(!c){sum.innerHTML='<span class="muted">Chọn hóa đơn và sách để xem số tiền.</span>';return}
+  form.quantity.max=c.max;
+  const row=(l,v,cls="")=>`<div class="total-line"><span>${l}</span><strong class="${cls}">${v}</strong></div>`;
+  let html=row(`Giá trị sách trả <small class="muted">(giá thực trả, đã trừ giảm giá)</small>`,money(c.returnValue));
+  if(!c.isEx){html+=row("Hoàn tiền cho khách",money(c.returnValue),"neg")+'<div class="small-note">Số tiền hoàn được <strong>trừ vào doanh thu</strong> và sách được cộng lại kho.</div>'}
+  else if(!c.nb){html+='<div class="small-note">Chọn sách muốn đổi sang để tính chênh lệch.</div>'}
+  else{
+   html+=row("Giá trị sách mới",money(c.newValue));
+   if(c.nb.id===c.it.book_id)html+='<div class="small-note neg">Hãy chọn sách khác với sách đang đổi.</div>';
+   else if(c.diff>0){html+=row("Khách cần thanh toán thêm",money(c.diff),"pos")+`<div class="small-note">Hệ thống sẽ tạo <strong>hóa đơn đổi hàng</strong> cho phần chênh lệch (tính vào doanh thu).</div>`;pay.hidden=false;$("#ret-paid-label").textContent=`Đã thu đủ ${money(c.diff)} từ khách`}
+   else if(c.diff<0)html+=row("Hoàn lại chênh lệch cho khách",money(-c.diff),"neg")+'<div class="small-note">Ghi nhận đổi hàng và số tiền chênh lệch; khoản này <strong>trừ vào doanh thu</strong>.</div>';
+   else html+='<div class="small-note">Hai sách cùng giá trị, không phát sinh chênh lệch.</div>';
+  }
+  sum.innerHTML=html;
+ }
+ form.type.onchange=update;form.book_id.onchange=update;form.quantity.addEventListener("input",update);$("#cancel-form").onclick=closeModal;
+ form.onsubmit=async e=>{e.preventDefault();const c=calc();
+  if(!c){toast("Vui lòng chọn hóa đơn và sách.");return}
+  if(c.qty<1||c.qty>c.max){toast(`Số lượng phải từ 1 đến ${c.max}.`);return}
+  if(c.isEx&&!c.nb){toast("Vui lòng chọn sách muốn đổi sang.");return}
+  if(c.diff>0&&!$("#ret-paid").checked){toast("Hãy xác nhận đã thu tiền chênh lệch của khách.");return}
+  try{const r=await api("/api/returns",{method:"POST",body:JSON.stringify({invoice_id:cur.id,book_id:Number(form.book_id.value),quantity:c.qty,type:form.type.value,reason:form.reason.value,new_book_id:c.isEx?c.nb.value:null,payment_method:form.payment_method.value})});
+   closeModal();toast(r.type==="Trả hàng"?`Đã ghi nhận trả hàng, hoàn ${money(r.refund)}.`:r.diff>0?`Đã đổi hàng. Hóa đơn đổi ${r.exchange_code} thu thêm ${money(r.diff)}.`:r.diff<0?`Đã đổi hàng. Hoàn lại chênh lệch ${money(-r.diff)}.`:"Đã ghi nhận đổi hàng.");renderPage()}catch(err){toast(err.message)}};
 }
 function localDateValue(date){
   const year=date.getFullYear(),month=String(date.getMonth()+1).padStart(2,"0"),day=String(date.getDate()).padStart(2,"0");
@@ -361,7 +424,7 @@ async function loadReport(){
     const statusCount=status=>Number((r.statusCounts||[]).find(x=>x.payment_status===status)?.count||0);
     $("#report-output").innerHTML=`
       <div class="stats" style="margin-top:10px">
-        ${stat("Doanh thu",money(r.sales.revenue),"Chỉ hóa đơn đã thanh toán","₫")}
+        ${stat("Doanh thu thuần",money(r.sales.revenue),"Bán hàng − hoàn trả ± đổi hàng","₫")}
         ${stat("Số hóa đơn",number(r.sales.invoices),"Đã thanh toán thành công","▧")}
         ${stat("Tổng giảm giá",money(r.sales.discounts),"Trên hóa đơn đã thanh toán","％")}
         ${stat("Mặt hàng tồn kho",number(r.stock.length),"Đầu sách đang hoạt động","▤")}
@@ -372,6 +435,35 @@ async function loadReport(){
           ${stat("Đã thanh toán",number(statusCount("Đã thanh toán")),"Được tính vào doanh thu","✓")}
           ${stat("Chưa thanh toán",number(statusCount("Chưa thanh toán")),"Không tính vào doanh thu","…")}
           ${stat("Hủy thanh toán",number(statusCount("Hủy thanh toán")),"Không tính vào doanh thu","×")}
+        </div>
+      </div>
+      <div class="table-card" style="margin-top:14px">
+        <div class="table-toolbar"><strong>Cách tính doanh thu thuần</strong><span class="hint">${esc(from)} đến ${esc(to)}</span></div>
+        <div style="padding:6px 18px 14px">
+          <div class="total-line"><span>Doanh thu bán hàng (hóa đơn đã thanh toán)</span><strong>${money(r.sales.gross_revenue)}</strong></div>
+          <div class="total-line"><span>＋ Thu thêm từ đổi sách đắt hơn (hóa đơn đổi hàng)</span><strong class="pos">${money(r.returnStats.exchange_collected)}</strong></div>
+          <div class="total-line"><span>－ Hoàn tiền trả hàng</span><strong class="neg">${money(r.returnStats.return_refunds)}</strong></div>
+          <div class="total-line"><span>－ Hoàn chênh lệch khi đổi sách rẻ hơn</span><strong class="neg">${money(r.returnStats.exchange_refunded)}</strong></div>
+          <div class="total-line final"><span>Doanh thu thuần</span><strong>${money(r.sales.revenue)}</strong></div>
+        </div>
+      </div>
+      <div class="table-card" style="margin-top:18px">
+        <div class="table-toolbar"><strong>Thống kê đổi / trả hàng</strong><span class="hint">Đổi / trả trong ${"7"} ngày kể từ ngày lập hóa đơn</span></div>
+        <div class="stats">
+          ${stat("Lượt trả hàng",number(r.returnStats.return_count),"Hoàn "+money(r.returnStats.return_refunds),"↩")}
+          ${stat("Lượt đổi hàng",number(r.returnStats.exchange_count),"Thu thêm "+money(r.returnStats.exchange_collected)+" · hoàn "+money(r.returnStats.exchange_refunded),"⇄")}
+          ${stat("Tỷ lệ đổi / trả",(r.returnStats.rate*100).toFixed(1).replace(".",",")+"%",number(r.returnStats.quantity)+" / "+number(r.returnStats.sold_quantity)+" cuốn đã bán","％")}
+          ${stat("Ảnh hưởng doanh thu",(r.returnStats.net_effect>0?"+":r.returnStats.net_effect<0?"−":"")+money(Math.abs(r.returnStats.net_effect)),"Đổi / trả tính vào doanh thu thuần","₫")}
+        </div>
+        <div class="grid-2" style="padding:0 18px 18px">
+          <div class="table-card" style="box-shadow:none">
+            <div class="table-toolbar"><strong>Sách bị đổi / trả nhiều nhất</strong></div>
+            <div class="table-wrap"><table><thead><tr><th>SÁCH</th><th>SỐ CUỐN</th><th>SỐ LẦN</th><th>HOÀN TIỀN</th></tr></thead><tbody>${r.topReturned.map(x=>`<tr><td>${esc(x.code)} · ${esc(x.title)}</td><td>${number(x.quantity)}</td><td>${x.times}</td><td>${money(x.refund)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Chưa có đổi / trả trong khoảng thời gian này</td></tr>'}</tbody></table></div>
+          </div>
+          <div class="table-card" style="box-shadow:none">
+            <div class="table-toolbar"><strong>Giao dịch đổi / trả gần đây</strong></div>
+            <div class="table-wrap"><table><thead><tr><th>MÃ</th><th>LOẠI</th><th>SÁCH</th><th>TIỀN</th></tr></thead><tbody>${r.recentReturns.map(x=>`<tr><td>${esc(x.code)}<div class="muted" style="font-size:10px">${esc(x.invoice_code)}</div></td><td><span class="pill ${x.type==="Trả hàng"?"danger":"warn"}">${esc(x.type)}</span></td><td>${esc(x.book_title)}${x.new_title?`<div class="muted" style="font-size:10px">→ ${esc(x.new_title)}</div>`:""}</td><td>${returnEffect(x)}</td></tr>`).join("")||'<tr><td colspan="4" class="empty">Chưa có giao dịch</td></tr>'}</tbody></table></div>
+          </div>
         </div>
       </div>
       <div class="grid-2" style="margin-top:18px">
